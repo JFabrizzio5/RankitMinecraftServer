@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  mc-server:
+    image: itzg/minecraft-server:latest
+    container_name: mc-server
+    ports:
+      - "25565:25565"
+      - "25575:25575"
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.8.8"
+      ONLINE_MODE: "FALSE"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: "uhc_secure_rcon_pass_2026"
+      RCON_PORT: "25575"
+      USE_NATIVE_TRANSPORT: "FALSE"
+      JVM_OPTS: "-Dio.netty.eventLoopThreads=2 -XX:ActiveProcessorCount=2 -XX:+UseG1GC -XX:MaxGCPauseMillis=50"
+    volumes:
+      - ./mc-data:/data
+    restart: unless-stopped
+
+  api-controller:
+    build: ./controller
+    container_name: api-controller
+    ports:
+      - "3005:3000"
+    volumes:
+      - ./mc-data:/usr/src/app/mc-data:ro
+    environment:
+      PORT: "3000"
+      RCON_HOST: "mc-server"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "uhc_secure_rcon_pass_2026"
+      STATS_DIR: "/usr/src/app/mc-data/world/stats"
+      USERCACHE_PATH: "/usr/src/app/mc-data/usercache.json"
+      NODE_ENV: "production"
+    depends_on:
+      - mc-server
+    restart: unless-stopped

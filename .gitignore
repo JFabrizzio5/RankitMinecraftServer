@@ -1,0 +1,14 @@
+# Minecraft data files (huge server data, plugins, worlds, cache)
+mc-data/
+
+# Node.js dependencies
+node_modules/
+controller/node_modules/
+
+# Local configuration files
+controller/uhc-config.json
+.env
+
+# System and OS files
+.DS_Store
+*.log

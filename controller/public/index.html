@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minecraft UHC Uploader & Live Tournament Dashboard</title>
+  <!-- Modern Premium Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Customized Premium Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="glow-bg"></div>
+  <div class="container">
+    
+    <!-- DASHBOARD HEADER -->
+    <header class="app-header glass-card">
+      <div class="header-logo">
+        <div class="logo-icon">
+          <i class="fa-solid fa-trophy text-gold"></i>
+        </div>
+        <div class="logo-text">
+          <h1>MINECRAFT <span class="accent-text">UHC</span></h1>
+          <p>Live Tournament & API Command Center</p>
+        </div>
+      </div>
+      
+      <!-- Live Server Status Indicator -->
+      <div class="server-status-container">
+        <div id="status-glow" class="status-indicator offline">
+          <span class="pulse-ring"></span>
+          <span class="status-dot"></span>
+        </div>
+        <div class="status-info">
+          <div class="status-label">Servidor Principal</div>
+          <div id="status-text" class="status-value font-mono">OFFLINE</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- METRICS GRID -->
+    <div class="metrics-grid">
+      <!-- Players Card -->
+      <div class="metric-card glass-card">
+        <div class="card-icon gradient-blue">
+          <i class="fa-solid fa-users"></i>
+        </div>
+        <div class="card-data">
+          <h3>JUGADORES ONLINE</h3>
+          <p id="metric-online" class="metric-val">0 / 0</p>
+          <span class="metric-desc">Combatientes activos en el mapa</span>
+        </div>
+      </div>
+
+      <!-- Kills Card -->
+      <div class="metric-card glass-card">
+        <div class="card-icon gradient-red">
+          <i class="fa-solid fa-skull"></i>
+        </div>
+        <div class="card-data">
+          <h3>BAJAS TOTALES</h3>
+          <p id="metric-kills" class="metric-val">0</p>
+          <span class="metric-desc">Muertes registradas en el torneo</span>
+        </div>
+      </div>
+
+      <!-- Leader Card -->
+      <div class="metric-card glass-card">
+        <div class="card-icon gradient-gold">
+          <i class="fa-solid fa-crown"></i>
+        </div>
+        <div class="card-data">
+          <h3>LÍDER DEL TORNEO</h3>
+          <p id="metric-leader" class="metric-val">Nadie</p>
+          <span id="metric-leader-sub" class="metric-desc">0 Kills</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN BODY CONTENT -->
+    <div class="main-layout">
+      
+      <!-- UHC ORCHESTRATION & CONFIGURATION PANEL -->
+      <section class="content-panel glass-card uhc-panel">
+        <div class="panel-header">
+          <h2><i class="fa-solid fa-gamepad accent-text"></i> Consola de Torneo UHC</h2>
+          <span id="uhc-badge" class="badge">UHC Desactivado</span>
+        </div>
+        
+        <div class="uhc-container">
+          <!-- LIVE ORCHESTRATOR / HUD -->
+          <div class="uhc-live-hud">
+            <div class="hud-metrics">
+              <div class="hud-box">
+                <span class="hud-label"><i class="fa-solid fa-hourglass-half"></i> FASE ACTUAL</span>
+                <span id="uhc-phase-val" class="hud-value font-mono text-gold">ESPERANDO</span>
+              </div>
+              <div class="hud-box">
+                <span class="hud-label"><i class="fa-solid fa-clock"></i> TIEMPO JUGADO</span>
+                <span id="uhc-timer-val" class="hud-value font-mono">00:00:00</span>
+              </div>
+              <div class="hud-box">
+                <span class="hud-label"><i class="fa-solid fa-border-none"></i> BORDE ACTUAL</span>
+                <span id="uhc-border-val" class="hud-value font-mono">-- bloques</span>
+              </div>
+            </div>
+            
+            <div class="hud-actions">
+              <button id="btn-uhc-start" class="btn btn-success ripple">
+                <i class="fa-solid fa-play"></i> INICIAR ESCENARIO UHC
+              </button>
+              <button id="btn-uhc-stop" class="btn btn-danger ripple hidden">
+                <i class="fa-solid fa-circle-stop"></i> DETENER Y REINICIAR UHC
+              </button>
+            </div>
+          </div>
+
+          <!-- SEPARATOR -->
+          <hr class="uhc-divider">
+
+          <!-- CONFIGURATION SECTION -->
+          <div class="uhc-settings-wrapper">
+            <h3 class="settings-title"><i class="fa-solid fa-gears"></i> Parámetros de Partida</h3>
+            <form id="uhc-config-form" class="uhc-form">
+              
+              <!-- SCENARIOS TOGGLES -->
+              <div class="form-section">
+                <h4>Escenarios Especiales</h4>
+                <div class="scenarios-checkbox-grid">
+                  
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-cutclean" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">CutClean</span>
+                      <span class="toggle-desc">Menas cocinadas y comida cocinada automática.</span>
+                    </span>
+                  </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-fireless">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">Fireless</span>
+                      <span class="toggle-desc">Inmunidad al fuego, lava y quemaduras.</span>
+                    </span>
+                  </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-noclean">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">NoClean</span>
+                      <span class="toggle-desc">Inmunidad temporal de 20s tras conseguir una baja.</span>
+                    </span>
+                  </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-doublehealth">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">Double Health</span>
+                      <span class="toggle-desc">40 puntos de vida iniciales (4 filas de corazones).</span>
+                    </span>
+                  </label>
+                  
+                </div>
+              </div>
+
+              <!-- GENERAL & BORDER METRICS -->
+              <div class="form-section row-fields">
+                <div class="form-group">
+                  <label for="uhc-grace-time">Tiempo de Gracia (minutos)</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-shield-halved input-icon"></i>
+                    <input type="number" id="uhc-grace-time" value="20" min="1" required>
+                  </div>
+                </div>
+
+                <div class="form-group checkbox-cell">
+                  <label class="checkbox-custom-container">
+                    <input type="checkbox" id="uhc-calc-density">
+                    <span class="checkbox-custom-box"></span>
+                    <span class="checkbox-custom-label">
+                      <strong>Cálculo por Densidad</strong>
+                      <span class="checkbox-custom-desc">Borde inicial automático según jugadores online.</span>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="form-group" id="group-manual-border">
+                  <label for="uhc-start-border">Tamaño de Borde Inicial (bloques)</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-maximize input-icon"></i>
+                    <input type="number" id="uhc-start-border" value="2000" min="100" required>
+                  </div>
+                </div>
+
+                <div class="form-group hidden" id="group-density-players">
+                  <label for="uhc-players-border">Gente por Bloque de Borde</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-users-viewfinder input-icon"></i>
+                    <input type="number" id="uhc-players-border" value="4" min="1" required>
+                  </div>
+                  <span class="field-help-text">Ejemplo: 4 jugadores/borde = 1000m si hay 8 jugadores.</span>
+                </div>
+              </div>
+
+              <!-- ZONES REDUCTION SCHEDULER -->
+              <div class="form-section">
+                <h4>Fases de Cierre de Borde (Zonas)</h4>
+                <div class="zones-container-grid">
+                  
+                  <div class="zone-card">
+                    <div class="zone-badge badge-z1">Zona 1</div>
+                    <div class="zone-field">
+                      <label for="uhc-z1-border">Borde final</label>
+                      <input type="number" id="uhc-z1-border" value="1000" min="50" required>
+                    </div>
+                    <div class="zone-field">
+                      <label for="uhc-z1-time">Cerrado en (min)</label>
+                      <input type="number" id="uhc-z1-time" value="10" min="1" required>
+                    </div>
+                  </div>
+
+                  <div class="zone-card">
+                    <div class="zone-badge badge-z2">Zona 2</div>
+                    <div class="zone-field">
+                      <label for="uhc-z2-border">Borde final</label>
+                      <input type="number" id="uhc-z2-border" value="500" min="30" required>
+                    </div>
+                    <div class="zone-field">
+                      <label for="uhc-z2-time">Cerrado en (min)</label>
+                      <input type="number" id="uhc-z2-time" value="10" min="1" required>
+                    </div>
+                  </div>
+
+                  <div class="zone-card">
+                    <div class="zone-badge badge-z3">Zona Final</div>
+                    <div class="zone-field">
+                      <label for="uhc-z3-border">Borde final</label>
+                      <input type="number" id="uhc-z3-border" value="100" min="10" required>
+                    </div>
+                    <div class="zone-field">
+                      <label for="uhc-z3-time">Cerrado en (min)</label>
+                      <input type="number" id="uhc-z3-time" value="10" min="1" required>
+                    </div>
+                  </div>
+                  
+                </div>
+              </div>
+
+              <!-- SAVE ACTION -->
+              <div class="form-actions">
+                <button type="button" id="btn-uhc-save" class="btn btn-primary ripple">
+                  <i class="fa-solid fa-floppy-disk"></i> GUARDAR PARÁMETROS DEL UHC
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- LEADERBOARD PANEL -->
+      <section class="content-panel glass-card leaderboard-panel">
+        <div class="panel-header">
+          <h2><i class="fa-solid fa-ranking-star accent-text"></i> Tabla de Posiciones</h2>
+          <span id="leaderboard-badge" class="badge">Sincronizado</span>
+        </div>
+        <div class="table-container">
+          <table class="premium-table">
+            <thead>
+              <tr>
+                <th class="col-rank">Pos.</th>
+                <th class="col-player">Jugador</th>
+                <th class="col-status">Estado</th>
+                <th class="col-kills text-right">Kills</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+              <tr>
+                <td colspan="4" class="loading-td">
+                  <div class="spinner"></div>
+                  <span>Cargando estadísticas en tiempo real...</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- CONTROL & TERMINAL SIDEBAR -->
+      <div class="sidebar">
+        
+        <!-- CONTROL PANEL -->
+        <section class="content-panel glass-card control-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-sliders accent-text"></i> Panel de Control</h2>
+          </div>
+          <div class="control-actions">
+            <!-- Server ping metric -->
+            <div class="ping-display">
+              <span class="ping-title">Latencia RCON/TCP:</span>
+              <span id="ping-value" class="ping-ms">-- ms</span>
+            </div>
+            <!-- Actions -->
+            <button id="btn-regen-lobby" class="btn btn-primary ripple" style="margin-bottom: 12px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-cubes"></i> REGENERAR LOBBY SPAWN
+            </button>
+            <!-- Danger Zone -->
+            <button id="btn-stop" class="btn btn-danger ripple">
+              <i class="fa-solid fa-power-off"></i> APAGAR SERVIDOR
+            </button>
+          </div>
+        </section>
+
+        <!-- TERMINAL INTERACTIVE CONSOLE -->
+        <section class="content-panel glass-card console-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-terminal accent-text"></i> Terminal Web RCON</h2>
+            <span class="status-badge" id="rcon-status">DESCONECTADO</span>
+          </div>
+          <div class="console-wrapper">
+            <div id="console-output" class="console-screen font-mono">
+              <div class="console-line system">[Sistema] Bienvenido a la terminal de Minecraft UHC.</div>
+              <div class="console-line system">[Sistema] Las respuestas del servidor aparecerán aquí.</div>
+            </div>
+            
+            <!-- Quick command actions -->
+            <div class="quick-commands">
+              <button class="cmd-pill" data-cmd="list">/list</button>
+              <button class="cmd-pill" data-cmd="toggledownfall">/toggledownfall</button>
+              <button class="cmd-pill" data-cmd="time set day">/time set day</button>
+              <button class="cmd-pill" data-cmd="whitelist list">/whitelist</button>
+            </div>
+
+            <form id="console-form" class="console-input-area">
+              <span class="console-prompt font-mono">mc-server$</span>
+              <input type="text" id="console-input" class="console-input font-mono" placeholder="Escribe un comando de Minecraft..." autocomplete="off" disabled>
+              <button type="submit" id="console-send" class="btn btn-primary" disabled>
+                <i class="fa-solid fa-paper-plane"></i>
+              </button>
+            </form>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Container -->
+  <div id="notification-container"></div>
+
+  <!-- CONFIRMATION MODAL -->
+  <div id="stop-modal" class="modal-overlay">
+    <div class="modal glass-card">
+      <div class="modal-icon">
+        <i class="fa-solid fa-circle-exclamation text-danger"></i>
+      </div>
+      <h2>¿Confirmar Apagado del Servidor?</h2>
+      <p>Esta acción enviará el comando <strong>/stop</strong> por RCON. El servidor guardará el mapa y se detendrá de forma ordenada.</p>
+      <div class="modal-buttons">
+        <button id="modal-cancel" class="btn btn-secondary">Cancelar</button>
+        <button id="modal-confirm" class="btn btn-danger">Confirmar Parada</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
