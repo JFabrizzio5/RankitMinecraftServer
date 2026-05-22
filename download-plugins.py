@@ -65,7 +65,7 @@ def main():
             print(f"[Clean] Removed older file: {old_file}")
 
     print("==========================================================")
-    print(" INICIANDO DESCARGA REAL DE VIAVERSION, VIABACKWARDS & VIAREWIND ")
+    print(" INICIANDO DESCARGA REAL DE VIAVERSION, VIABACKWARDS, VIAREWIND & NOCHEATPLUS ")
     print("==========================================================")
     
     # 1. Download ViaVersion
@@ -76,9 +76,12 @@ def main():
     
     # 3. Download ViaRewind
     vr_file = download_latest_release("ViaVersion", "ViaRewind", plugins_dir)
+
+    # 4. Download NoCheatPlus (Anti-Hack)
+    ncp_file = download_latest_release("Updated-NoCheatPlus", "NoCheatPlus", plugins_dir)
     
-    if vv_file and vb_file and vr_file:
-        print("\n[4/4] Reiniciando el contenedor de Minecraft (mc-server) para cargar los plugins...")
+    if vv_file and vb_file and vr_file and ncp_file:
+        print("\n[5/5] Reiniciando el contenedor de Minecraft (mc-server) para cargar los plugins...")
         try:
             # Restart mc-server via docker compose
             subprocess.run(
@@ -88,12 +91,12 @@ def main():
             )
             print("==========================================================")
             print(" ¡COMPLETADO! El servidor se ha reiniciado exitosamente.  ")
-            print(" Ahora acepta clientes 1.7.10 y 1.8 de forma nativa.   ")
+            print(" Ahora acepta clientes 1.7.10 y 1.8 con Anti-Cheat activo.")
             print("==========================================================")
         except Exception as e:
             print(f"[Error] No se pudo reiniciar el servidor de Minecraft: {e}")
     else:
-        print("[Error] No se pudieron descargar todos los plugins. Revisa tu conexión de red.")
+        print("[Error] No se pudieron descargar todos los plugins (incluido NoCheatPlus). Revisa tu conexión de red.")
 
 if __name__ == "__main__":
     main()

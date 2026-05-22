@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalRegenConfirm = document.getElementById('modal-regen-confirm');
   
   const notificationContainer = document.getElementById('notification-container');
+  const historyContainer = document.getElementById('history-container');
+  const uhcEventName = document.getElementById('uhc-event-name');
+  const uhcServerIp = document.getElementById('uhc-server-ip');
 
   // UHC DOM Elements
   const uhcBadge = document.getElementById('uhc-badge');
@@ -54,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const scenFireless = document.getElementById('scen-fireless');
   const scenNoClean = document.getElementById('scen-noclean');
   const scenDoubleHealth = document.getElementById('scen-doublehealth');
+  const scenTimeBomb = document.getElementById('scen-timebomb');
   
   // Settings inputs
   const uhcGraceTime = document.getElementById('uhc-grace-time');
@@ -228,9 +232,23 @@ document.addEventListener('DOMContentLoaded', () => {
         else rankHtml = `<span class="rank-badge rank-normal">${player.rank}</span>`;
 
         // Status badge
-        const statusClass = player.status === 'Alive' ? 'alive' : 'eliminated';
-        const statusLabel = player.status === 'Alive' ? 'Vivo' : 'Eliminado';
-        const statusIcon = player.status === 'Alive' ? 'fa-heartbeat' : 'fa-skull-crossbones';
+        let statusClass = 'eliminated';
+        let statusLabel = 'Eliminado';
+        let statusIcon = 'fa-skull-crossbones';
+
+        if (player.status === 'Ganador') {
+          statusClass = 'winner';
+          statusLabel = 'Ganador';
+          statusIcon = 'fa-trophy';
+        } else if (typeof player.status === 'string' && player.status.startsWith('Top')) {
+          statusClass = 'top';
+          statusLabel = player.status;
+          statusIcon = 'fa-medal';
+        } else if (player.status === 'Alive') {
+          statusClass = 'alive';
+          statusLabel = 'Vivo';
+          statusIcon = 'fa-heartbeat';
+        }
         
         const statusHtml = `
           <span class="status-pill ${statusClass}">
@@ -365,12 +383,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function populateUhcForm(config) {
     if (!config) return;
     
+    uhcEventName.value = config.eventName || 'UHC Evento';
+    uhcServerIp.value = config.serverIp || 'play.rankit.net';
+    
     // Scenarios
     if (config.scenarios) {
       scenCutClean.checked = !!config.scenarios.cutClean;
       scenFireless.checked = !!config.scenarios.fireless;
       scenNoClean.checked = !!config.scenarios.noClean;
       scenDoubleHealth.checked = !!config.scenarios.doubleHealth;
+      scenTimeBomb.checked = !!config.scenarios.timeBomb;
     }
     
     // Core parameters
@@ -519,30 +541,32 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Regenerate spawn lobby
-  btnRegenLobby.addEventListener('click', async () => {
-    if (!isServerOnline) {
-      showNotification('El servidor de Minecraft está apagado.', 'danger');
-      return;
-    }
-    if (!isRconConnected) {
-      showNotification('La consola RCON está desconectada.', 'danger');
-      return;
-    }
-
-    try {
-      showNotification('Construyendo lobby spawn en el servidor...', 'info');
-      const res = await fetch('/api/lobby/regenerate', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showNotification('¡Lobby spawn reconstruído exitosamente!', 'success');
-        printToConsole('[Lobby Engine] ¡Lobby del torneo generado exitosamente!', 'system');
-      } else {
-        showNotification(data.error || 'Fallo al construir el lobby.', 'danger');
+  if (btnRegenLobby) {
+    btnRegenLobby.addEventListener('click', async () => {
+      if (!isServerOnline) {
+        showNotification('El servidor de Minecraft está apagado.', 'danger');
+        return;
       }
-    } catch (err) {
-      showNotification('Error de red al reconstruir el lobby.', 'danger');
-    }
-  });
+      if (!isRconConnected) {
+        showNotification('La consola RCON está desconectada.', 'danger');
+        return;
+      }
+
+      try {
+        showNotification('Construyendo lobby spawn en el servidor...', 'info');
+        const res = await fetch('/api/lobby/regenerate', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showNotification('¡Lobby spawn reconstruído exitosamente!', 'success');
+          printToConsole('[Lobby Engine] ¡Lobby del torneo generado exitosamente!', 'system');
+        } else {
+          showNotification(data.error || 'Fallo al construir el lobby.', 'danger');
+        }
+      } catch (err) {
+        showNotification('Error de red al reconstruir el lobby.', 'danger');
+      }
+    });
+  }
 
   // Close modal when clicking outer backdrop
   stopModal.addEventListener('click', (e) => {
@@ -572,11 +596,14 @@ document.addEventListener('DOMContentLoaded', () => {
       startBorderSize: parseInt(uhcStartBorder.value, 10),
       playersPerBorder: parseInt(uhcPlayersBorder.value, 10),
       calcBorderByDensity: uhcCalcDensity.checked,
+      eventName: uhcEventName.value,
+      serverIp: uhcServerIp.value,
       scenarios: {
         cutClean: scenCutClean.checked,
         fireless: scenFireless.checked,
         noClean: scenNoClean.checked,
-        doubleHealth: scenDoubleHealth.checked
+        doubleHealth: scenDoubleHealth.checked,
+        timeBomb: scenTimeBomb.checked
       },
       zone1Border: parseInt(uhcZ1Border.value, 10),
       zone1Time: parseInt(uhcZ1Time.value, 10),
@@ -725,16 +752,125 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  async function loadTournamentHistory() {
+    try {
+      const res = await fetch('/api/uhc/history');
+      if (!res.ok) throw new Error('History API unreachable');
+      const historyList = await res.json();
+      renderTournamentHistory(historyList);
+    } catch (err) {
+      console.error('Error fetching tournament history:', err);
+    }
+  }
+
+  function renderTournamentHistory(historyList) {
+    if (!historyList || historyList.length === 0) {
+      historyContainer.innerHTML = `
+        <div class="no-history">
+          <i class="fa-solid fa-calendar-minus"></i>
+          <p>No hay torneos registrados aún.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    historyList.forEach((record, index) => {
+      const dateFormatted = new Date(record.date).toLocaleString('es-ES', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      const isDraw = !record.winner || record.winner.includes('Ninguno') || record.winnerKills === 0;
+      const avatarUrl = isDraw 
+        ? 'https://mc-heads.net/avatar/MHF_Question/64'
+        : `https://mc-heads.net/avatar/${record.winner}/64`;
+
+      const recordId = `history-rec-${index}`;
+      
+      let placementsHtml = '';
+      if (record.placements && record.placements.length > 0) {
+        placementsHtml = record.placements.map(p => {
+          let rClass = 'normal';
+          let rBadge = p.rank;
+          if (p.rank === 1) { rClass = 'gold'; rBadge = '<i class="fa-solid fa-crown"></i>'; }
+          else if (p.rank === 2) { rClass = 'silver'; }
+          else if (p.rank === 3) { rClass = 'bronze'; }
+
+          return `
+            <div class="placement-row rank-${rClass}">
+              <span class="pl-rank">${rBadge}</span>
+              <span class="pl-name">${p.name}</span>
+              <span class="pl-kills font-mono">${p.kills} Kills</span>
+            </div>
+          `;
+        }).join('');
+      }
+
+      html += `
+        <div class="history-card glass-card">
+          <div class="history-card-header">
+            <div class="history-event-info">
+              <span class="history-event-name font-mono text-gold">${record.eventName}</span>
+              <span class="history-date"><i class="fa-solid fa-calendar-days"></i> ${dateFormatted}</span>
+            </div>
+            <span class="history-server-ip"><i class="fa-solid fa-network-wired"></i> ${record.serverIp}</span>
+          </div>
+          
+          <div class="history-card-body">
+            <div class="winner-profile">
+              <img class="winner-avatar" src="${avatarUrl}" alt="${record.winner}" onerror="this.src='https://mc-heads.net/avatar/MHF_Steve/64'">
+              <div class="winner-details">
+                <span class="winner-label">${isDraw ? 'PARTIDA SIN GANADOR' : 'CAMPEÓN UHC'}</span>
+                <span class="winner-name font-mono">${record.winner}</span>
+                <span class="winner-kills text-gold"><i class="fa-solid fa-skull"></i> ${record.winnerKills} Kills</span>
+              </div>
+            </div>
+            
+            <div class="history-meta font-mono">
+              <div class="meta-item">
+                <span class="meta-label">DURACIÓN:</span>
+                <span class="meta-value">${record.duration}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">SEMILLA:</span>
+                <span class="meta-value">${record.worldSeed || 'Aleatoria'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="history-collapsible">
+            <button class="btn-collapse" onclick="document.getElementById('${recordId}').classList.toggle('expanded'); this.classList.toggle('active');">
+               <span>Ver Clasificación Completa</span> <i class="fa-solid fa-chevron-down"></i>
+            </button>
+            <div class="collapse-content" id="${recordId}">
+              <div class="placements-list">
+                ${placementsHtml || '<div class="no-placements">No hay clasificación disponible.</div>'}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    historyContainer.innerHTML = html;
+  }
+
   // --- AUTOMATIC REFRESH POLLING ---
   // Poll immediately on mount
   updateStatus();
   updateStats();
   updateUhcStatus();
+  loadTournamentHistory();
 
   // Schedule status check, stats fetch, and UHC poll loops every 3 seconds
   setInterval(updateStatus, 3000);
   setInterval(updateStats, 3000);
   setInterval(updateUhcStatus, 3000);
+  setInterval(loadTournamentHistory, 6000);
 
   showNotification('Dashboard de Minecraft UHC Inicializado.', 'success');
 });

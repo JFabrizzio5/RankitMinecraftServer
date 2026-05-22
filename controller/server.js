@@ -20,7 +20,8 @@ const STATS_DIR = process.env.STATS_DIR || path.join(__dirname, 'mc-data', 'worl
 const USERCACHE_PATH = process.env.USERCACHE_PATH || path.join(__dirname, 'mc-data', 'usercache.json');
 
 // --- UHC TOURNAMENT GAME STATE & CONFIGURATION ---
-const UHC_CONFIG_FILE = path.join(__dirname, 'uhc-config.json');
+const UHC_CONFIG_FILE = path.join(__dirname, 'mc-data', 'uhc-config.json');
+const UHC_HISTORY_FILE = path.join(__dirname, 'mc-data', 'uhc-history.json');
 
 let uhcState = {
   active: false,
@@ -28,15 +29,18 @@ let uhcState = {
   startTime: null,
   graceTime: 20, // minutes
   finalHealTime: 10, // minutes (Final Heal event time)
-  worldSeed: '', // seed config
+  worldSeed: '1746271928', // seed config
   startBorderSize: 2000,
   playersPerBorder: 4, // border density spread
   calcBorderByDensity: false,
+  eventName: 'UHC Evento',
+  serverIp: 'play.rankit.net',
   scenarios: {
     cutClean: true,
     fireless: false,
     noClean: false,
-    doubleHealth: false
+    doubleHealth: false,
+    timeBomb: false
   },
   zone1Border: 1000,
   zone1Time: 10, // minutes of shrink
@@ -46,7 +50,11 @@ let uhcState = {
   zone3Time: 10,
   currentBorderSize: 2000,
   elapsedSeconds: 0,
-  timerInterval: null
+  timerInterval: null,
+  participants: [],
+  aliveParticipants: [],
+  placements: {}, // lowercaseName -> rank
+  initialStats: {} // lowercaseName -> { deaths, kills }
 };
 
 function readSeedFromProperties() {
@@ -72,7 +80,7 @@ try {
     uhcState = { ...uhcState, ...saved, active: false, state: 'idle', startTime: null, elapsedSeconds: 0, timerInterval: null };
   }
   if (!uhcState.worldSeed) {
-    uhcState.worldSeed = readSeedFromProperties();
+    uhcState.worldSeed = readSeedFromProperties() || '1746271928';
   }
 } catch (e) {
   console.error('Failed to load UHC config:', e.message);
@@ -87,6 +95,8 @@ function saveUhcConfig() {
       startBorderSize: uhcState.startBorderSize,
       playersPerBorder: uhcState.playersPerBorder,
       calcBorderByDensity: uhcState.calcBorderByDensity,
+      eventName: uhcState.eventName,
+      serverIp: uhcState.serverIp,
       scenarios: uhcState.scenarios,
       zone1Border: uhcState.zone1Border,
       zone1Time: uhcState.zone1Time,
@@ -147,46 +157,138 @@ async function executeRconCommand(command) {
   }
 }
 
-async function generateLobbyStructure() {
-  console.log('[Lobby Engine] Generating beautiful quartz & glass spawn lobby at 0, 100, 0...');
+function calculateSpreadParams(borderSize) {
+  const maxRange = Math.max(15, Math.floor(borderSize / 2) - 10);
+  const maxSafeSpread = Math.floor((maxRange - 1) / 2);
+  const spreadDistance = Math.min(50, Math.max(5, Math.min(maxSafeSpread, Math.floor(maxRange / 5))));
+  return { spreadDistance, maxRange };
+}
+
+async function generateBedrockBorder(borderSize) {
+  const half = Math.floor(borderSize / 2);
+  const minVal = -half;
+  const maxVal = half;
+  const minY = 50;
+  const maxY = 120;
+  
+  console.log(`[Border Engine] Generating physical Bedrock border at size ${borderSize}...`);
   try {
-    // 1. Set world spawn point
-    await executeRconCommand('setworldspawn 0 100 0');
-    
-    // 2. Clear space first (21x21x5 space filled with air to avoid players getting stuck)
-    await executeRconCommand('fill -10 100 -10 10 103 10 air');
-    
-    // 3. Floor (21x21 of Quartz Blocks)
-    await executeRconCommand('fill -10 99 -10 10 99 10 quartz_block');
-    
-    // 4. Glass Walls (3 blocks high)
-    await executeRconCommand('fill -10 100 -10 -10 102 10 glass');
-    await executeRconCommand('fill 10 100 -10 10 102 10 glass');
-    await executeRconCommand('fill -10 100 -10 10 102 -10 glass');
-    await executeRconCommand('fill -10 100 10 10 102 10 glass');
-    
-    // 5. Quartz Roof (21x21 Quartz Blocks)
-    await executeRconCommand('fill -10 103 -10 10 103 10 quartz_block');
-    
-    // 6. Corner & Wall center lightings (Glowstone at Y=102)
-    await executeRconCommand('setblock -9 102 -9 glowstone');
-    await executeRconCommand('setblock 9 102 -9 glowstone');
-    await executeRconCommand('setblock -9 102 9 glowstone');
-    await executeRconCommand('setblock 9 102 9 glowstone');
-    // Wall center glowstones for illumination
-    await executeRconCommand('setblock 0 102 -9 glowstone');
-    await executeRconCommand('setblock 0 102 9 glowstone');
-    await executeRconCommand('setblock -9 102 0 glowstone');
-    await executeRconCommand('setblock 9 102 0 glowstone');
-    
-    // 7. If tournament is not running, teleport everyone here and set to adventure mode
-    if (!uhcState.active) {
-      await executeRconCommand('gamemode adventure @a');
-      await executeRconCommand('tp @a 0 100 0');
-    }
-    console.log('[Lobby Engine] Lobby structure generated successfully!');
+    await executeRconCommand(`fill ${minVal} ${minY} ${minVal} ${minVal} ${maxY} ${maxVal} bedrock`);
+    await executeRconCommand(`fill ${maxVal} ${minY} ${minVal} ${maxVal} ${maxY} ${maxVal} bedrock`);
+    await executeRconCommand(`fill ${minVal} ${minY} ${minVal} ${maxVal} ${maxY} ${minVal} bedrock`);
+    await executeRconCommand(`fill ${minVal} ${minY} ${maxVal} ${maxVal} ${maxY} ${maxVal} bedrock`);
   } catch (err) {
-    console.error('[Lobby Engine] Error generating lobby:', err.message);
+    console.error('[Border Engine] Failed to generate Bedrock border blocks:', err.message);
+  }
+}
+
+function getPlayerStats(username) {
+  if (!username) return { kills: 0, deaths: 0 };
+  try {
+    if (!fs.existsSync(STATS_DIR)) return { kills: 0, deaths: 0 };
+    const cacheMap = loadUserCache();
+    const files = fs.readdirSync(STATS_DIR).filter((file) => file.endsWith('.json'));
+    for (const filename of files) {
+      const uuid = filename.replace('.json', '');
+      const cleanUuid = uuid.toLowerCase().replace(/-/g, '');
+      const cachedName = cacheMap.get(cleanUuid);
+      if (cachedName && cachedName.toLowerCase() === username.toLowerCase()) {
+        const filepath = path.join(STATS_DIR, filename);
+        if (fs.existsSync(filepath)) {
+          const content = fs.readFileSync(filepath, 'utf8');
+          const json = JSON.parse(content);
+          
+          let kills = 0;
+          let deaths = 0;
+
+          if (json['stat.playerKills'] !== undefined) kills = json['stat.playerKills'];
+          else if (json['stat.killEntity.Player'] !== undefined) kills = json['stat.killEntity.Player'];
+
+          if (json['stat.deaths'] !== undefined) deaths = json['stat.deaths'];
+
+          if (json.stats) {
+            const custom = json.stats['minecraft:custom'];
+            if (custom) {
+              if (custom['minecraft:player_kills'] !== undefined) kills = custom['minecraft:player_kills'];
+              if (custom['minecraft:deaths'] !== undefined) deaths = custom['minecraft:deaths'];
+            }
+          }
+          return { kills, deaths };
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[getPlayerStats] Error for player ${username}:`, err.message);
+  }
+  return { kills: 0, deaths: 0 };
+}
+
+async function generateLobbyStructure() {
+  console.log('[Lobby Engine] Lobby disabled by user request. Setting players to Creative mode.');
+  try {
+    if (!uhcState.active) {
+      await executeRconCommand('gamemode creative @a');
+    }
+  } catch (err) {
+    console.error('[Lobby Engine] Error setting creative mode:', err.message);
+  }
+}
+
+function saveTournamentToHistory(winnerName = null, winnerKills = 0) {
+  try {
+    const historyFile = UHC_HISTORY_FILE;
+    let history = [];
+    if (fs.existsSync(historyFile)) {
+      try {
+        history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+        if (!Array.isArray(history)) history = [];
+      } catch (e) {
+        console.error('Failed to parse uhc-history.json:', e.message);
+      }
+    }
+
+    const durationSec = uhcState.elapsedSeconds;
+    const formatDuration = (sec) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const placementsList = (uhcState.participants || []).map(p => {
+      const initial = uhcState.initialStats[p.toLowerCase()] || { deaths: 0, kills: 0 };
+      const current = getPlayerStats(p);
+      const kills = Math.max(0, current.kills - initial.kills);
+      const rank = uhcState.placements[p.toLowerCase()] || 1;
+      return {
+        name: p,
+        kills: kills,
+        rank: rank,
+        status: rank === 1 ? 'Ganador' : `Top ${rank}`
+      };
+    });
+
+    placementsList.sort((a, b) => a.rank - b.rank);
+
+    const record = {
+      winner: winnerName || 'Ninguno (Empate)',
+      winnerKills: winnerName ? winnerKills : 0,
+      eventName: uhcState.eventName || 'UHC Evento',
+      serverIp: uhcState.serverIp || 'play.rankit.net',
+      date: new Date().toISOString(),
+      duration: formatDuration(durationSec),
+      worldSeed: uhcState.worldSeed || '',
+      placements: placementsList
+    };
+
+    history.unshift(record);
+    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2), 'utf8');
+    console.log('[History Engine] Saved tournament results successfully.');
+  } catch (err) {
+    console.error('[History Engine] Failed to save tournament to history:', err.message);
   }
 }
 
@@ -221,7 +323,57 @@ async function startUhcGame() {
     }
   }
   uhcState.currentBorderSize = finalStartBorder;
+
+  // Clean offline deaths bridge file if exists on restart
+  try {
+    const bridgePath = path.join(__dirname, 'mc-data', 'offline-deaths.txt');
+    if (fs.existsSync(bridgePath)) {
+      fs.unlinkSync(bridgePath);
+    }
+  } catch (err) {
+    console.warn('[UHC Engine] Failed to delete offline-deaths.txt on start:', err.message);
+  }
+
+  // Populate participants, aliveParticipants, placements, initialStats
+  let onlinePlayers = [];
+  try {
+    const listRes = await rconClient.send('list');
+    const listRegex = /There are \d+(?:\/\d+)? players online:(.*)/i;
+    const match = listRes.match(listRegex);
+    if (match && match[1]) {
+      onlinePlayers = match[1].split(',').map(name => name.trim()).filter(Boolean);
+    } else {
+      const simpleMatch = /online:\s*(.*)/i.exec(listRes);
+      if (simpleMatch && simpleMatch[1]) {
+        onlinePlayers = simpleMatch[1].split(',').map(name => name.trim()).filter(Boolean);
+      }
+    }
+  } catch (err) {
+    console.error('[UHC Engine] Failed to get online players for UHC start:', err.message);
+  }
+
+  uhcState.participants = [...onlinePlayers];
+  uhcState.aliveParticipants = [...onlinePlayers];
+  uhcState.placements = {};
+  uhcState.initialStats = {};
+
+  for (const player of onlinePlayers) {
+    uhcState.initialStats[player.toLowerCase()] = getPlayerStats(player);
+  }
+
+  // Establish initial physical Bedrock walls and seal physics
   await executeRconCommand(`worldborder set ${finalStartBorder}`);
+  await generateBedrockBorder(finalStartBorder);
+
+  // Setup Life Scoreboard display in tab list and aboveName
+  try {
+    await executeRconCommand('scoreboard objectives remove health').catch(() => {});
+    await executeRconCommand('scoreboard objectives add health health Health').catch(() => {});
+    await executeRconCommand('scoreboard objectives setdisplay belowName health').catch(() => {});
+    await executeRconCommand('scoreboard objectives setdisplay list health').catch(() => {});
+  } catch (sbErr) {
+    console.error('[UHC Engine] Failed to setup health scoreboards:', sbErr.message);
+  }
 
   // Game rules
   await executeRconCommand('gamerule naturalRegeneration false');
@@ -236,8 +388,7 @@ async function startUhcGame() {
   await executeRconCommand('gamemode survival @a');
   
   // Dynamically calculate range and distance safety bounds to prevent Minecraft errors
-  const maxRange = Math.max(15, Math.floor(finalStartBorder / 2) - 10);
-  const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+  const { spreadDistance, maxRange } = calculateSpreadParams(finalStartBorder);
   await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
 
   // Scenarios setup
@@ -252,6 +403,12 @@ async function startUhcGame() {
     await executeRconCommand('effect @a minecraft:instant_health 5');
   }
 
+  // Activate scenarios in Java Spigot plugin
+  await executeRconCommand('uhcscenario active true');
+  await executeRconCommand('uhcscenario cutclean ' + !!uhcState.scenarios.cutClean);
+  await executeRconCommand('uhcscenario noclean ' + !!uhcState.scenarios.noClean);
+  await executeRconCommand('uhcscenario timebomb ' + !!uhcState.scenarios.timeBomb);
+
   // Grace items & effects
   await executeRconCommand('effect @a minecraft:resistance 15 255');
   await executeRconCommand('effect @a minecraft:saturation 15 255');
@@ -260,6 +417,8 @@ async function startUhcGame() {
   await executeRconCommand('title @a title {"text":"UHC INICIADO","color":"gold"}');
   await executeRconCommand(`title @a subtitle {"text":"Tiempo de gracia: ${uhcState.graceTime} min","color":"yellow"}`);
   await executeRconCommand(`say ¡El torneo UHC ha comenzado! Tiempo de gracia: ${uhcState.graceTime} minutos. PvP desactivado.`);
+
+  let lastOnlinePlayers = [...onlinePlayers];
 
   // Active timer loop
   if (uhcState.timerInterval) clearInterval(uhcState.timerInterval);
@@ -270,7 +429,124 @@ async function startUhcGame() {
       return;
     }
 
-    uhcState.elapsedSeconds++;
+    try {
+      uhcState.elapsedSeconds++;
+
+    // 1. Check offline/reconnecting players to TP inside
+    let currentOnline = [];
+    let listSuccess = false;
+    try {
+      const listRes = await rconClient.send('list');
+      const listRegex = /There are \d+(?:\/\d+)? players online:(.*)/i;
+      const match = listRes.match(listRegex);
+      if (match && match[1]) {
+        currentOnline = match[1].split(',').map(name => name.trim()).filter(Boolean);
+        listSuccess = true;
+      } else {
+        const simpleMatch = /online:\s*(.*)/i.exec(listRes);
+        if (simpleMatch && simpleMatch[1]) {
+          currentOnline = simpleMatch[1].split(',').map(name => name.trim()).filter(Boolean);
+          listSuccess = true;
+        }
+      }
+    } catch (e) {
+      console.warn('[UHC Engine] List command failed, skipping reconnection checks for this second.');
+    }
+
+    if (listSuccess) {
+      const previousOnline = lastOnlinePlayers;
+      lastOnlinePlayers = [...currentOnline];
+
+      // Find who just reconnected
+      for (const player of currentOnline) {
+        if (!previousOnline.some(p => p.toLowerCase() === player.toLowerCase())) {
+          // Just reconnected!
+          if (uhcState.aliveParticipants.some(p => p.toLowerCase() === player.toLowerCase())) {
+            console.log(`[UHC Engine] Reconnected player detected: ${player}. Teleporting safely inside current border: ${uhcState.currentBorderSize}`);
+            const { spreadDistance, maxRange } = calculateSpreadParams(uhcState.currentBorderSize);
+            executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false ${player}`).catch(err => {
+              console.error(`[UHC Engine] Failed to spread reconnected player ${player}:`, err.message);
+            });
+          }
+        }
+      }
+    }
+
+    // 2. Check bridge file offline-deaths.txt
+    try {
+      const bridgePath = path.join(__dirname, 'mc-data', 'offline-deaths.txt');
+      if (fs.existsSync(bridgePath)) {
+        const content = fs.readFileSync(bridgePath, 'utf8');
+        const deadNames = content.split('\n').map(n => n.trim()).filter(Boolean);
+        for (const name of deadNames) {
+          const idx = uhcState.aliveParticipants.findIndex(p => p.toLowerCase() === name.toLowerCase());
+          if (idx !== -1) {
+            const rank = uhcState.aliveParticipants.length;
+            uhcState.placements[name.toLowerCase()] = rank;
+            uhcState.aliveParticipants.splice(idx, 1);
+            console.log(`[UHC Engine] Offline death registered: ${name} finished at #${rank}`);
+          }
+        }
+        fs.unlinkSync(bridgePath);
+      }
+    } catch (err) {
+      console.error('[UHC Engine] Error processing offline-deaths.txt:', err.message);
+    }
+
+    // 3. Check stats deaths of alive participants
+    for (let i = uhcState.aliveParticipants.length - 1; i >= 0; i--) {
+      const playerName = uhcState.aliveParticipants[i];
+      const stats = getPlayerStats(playerName);
+      const initial = uhcState.initialStats[playerName.toLowerCase()] || { deaths: 0, kills: 0 };
+      if (stats.deaths > initial.deaths) {
+        // Player died and is eliminated!
+        const rank = uhcState.aliveParticipants.length;
+        uhcState.placements[playerName.toLowerCase()] = rank;
+        uhcState.aliveParticipants.splice(i, 1);
+        
+        const killsGained = stats.kills - initial.kills;
+        await executeRconCommand(`say ¡${playerName} ha sido eliminado! Puesto #${rank} (${killsGained} Kills)`);
+        await executeRconCommand(`title @a subtitle {"text":"${playerName} ha sido eliminado (#${rank})","color":"red"}`);
+        await executeRconCommand(`playeffect @a ambient.weather.thunder`);
+      }
+    }
+
+    // 4. Check UHC Win condition
+    if (uhcState.aliveParticipants.length === 1 && uhcState.elapsedSeconds > 5 && uhcState.state !== 'finished') {
+      const winnerName = uhcState.aliveParticipants[0];
+      uhcState.placements[winnerName.toLowerCase()] = 1;
+      uhcState.aliveParticipants = [];
+      uhcState.state = 'finished';
+      
+      const stats = getPlayerStats(winnerName);
+      const initial = uhcState.initialStats[winnerName.toLowerCase()] || { deaths: 0, kills: 0 };
+      const winnerKills = stats.kills - initial.kills;
+
+      saveTournamentToHistory(winnerName, winnerKills);
+
+      await executeRconCommand(`say ¡El torneo UHC ha terminado! ¡${winnerName} es el CAMPEÓN con ${winnerKills} kills!`);
+      await executeRconCommand(`title @a title {"text":"${winnerName.toUpperCase()} VICTORIA","color":"gold"}`);
+      await executeRconCommand(`title @a subtitle {"text":"¡Es el ganador de este UHC!","color":"yellow"}`);
+
+      // Firework show
+      let fireworkCount = 0;
+      const fInterval = setInterval(async () => {
+        if (fireworkCount >= 10 || !uhcState.active) {
+          clearInterval(fInterval);
+          return;
+        }
+        fireworkCount++;
+        await executeRconCommand(`execute @a ~ ~ ~ summon FireworksRocketEntity ~ ~1 ~ {LifeTime:20,FireworksItem:{id:401,Count:1,tag:{Fireworks:{Explosions:[{Type:1,Flicker:1,Trail:1,Colors:[16711680,65280,255],FadeColors:[16776960,16711935]}]}}}}`);
+      }, 800);
+    }
+    // Check draw
+    else if (uhcState.aliveParticipants.length === 0 && Object.keys(uhcState.initialStats).length > 0 && uhcState.state !== 'finished') {
+      uhcState.state = 'finished';
+      saveTournamentToHistory(null, 0);
+      await executeRconCommand(`say ¡El torneo UHC ha terminado sin un ganador claro!`);
+      await executeRconCommand(`title @a title {"text":"FIN DEL JUEGO","color":"red"}`);
+      await executeRconCommand(`title @a subtitle {"text":"No quedan jugadores activos","color":"yellow"}`);
+    }
 
     // Final Heal trigger
     if (uhcState.elapsedSeconds === uhcState.finalHealTime * 60) {
@@ -285,7 +561,7 @@ async function startUhcGame() {
     const zone2EndSeconds = zone1EndSeconds + (uhcState.zone2Time * 60);
     const zone3EndSeconds = zone2EndSeconds + (uhcState.zone3Time * 60);
 
-    // Dynamic border size estimation for UI (Constant sizes since we use Instant TP border now)
+    // Dynamic border size estimation for UI
     if (uhcState.state === 'grace') {
       uhcState.currentBorderSize = finalStartBorder;
     } else if (uhcState.state === 'zone1') {
@@ -301,12 +577,12 @@ async function startUhcGame() {
     if (uhcState.elapsedSeconds === totalGraceSeconds) {
       uhcState.state = 'zone1';
       await executeRconCommand('gamerule pvp true');
-      await executeRconCommand(`worldborder set ${uhcState.zone1Border}`);
       
-      // TP/spread all players inside the new border instantly
-      const maxRange = Math.max(15, Math.floor(uhcState.zone1Border / 2) - 10);
-      const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+      // Teleport safely inside new border first, then apply borders
+      const { spreadDistance, maxRange } = calculateSpreadParams(uhcState.zone1Border);
       await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+      await executeRconCommand(`worldborder set ${uhcState.zone1Border}`);
+      await generateBedrockBorder(uhcState.zone1Border);
 
       await executeRconCommand('title @a title {"text":"ZONA 1","color":"gold"}');
       await executeRconCommand('title @a subtitle {"text":"PvP ACTIVO - ¡Borde TP aplicado!","color":"red"}');
@@ -316,12 +592,11 @@ async function startUhcGame() {
     // Zone 1 ends -> Zone 2 starts
     else if (uhcState.elapsedSeconds === zone1EndSeconds) {
       uhcState.state = 'zone2';
-      await executeRconCommand(`worldborder set ${uhcState.zone2Border}`);
       
-      // TP/spread all players inside the new border instantly
-      const maxRange = Math.max(15, Math.floor(uhcState.zone2Border / 2) - 10);
-      const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+      const { spreadDistance, maxRange } = calculateSpreadParams(uhcState.zone2Border);
       await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+      await executeRconCommand(`worldborder set ${uhcState.zone2Border}`);
+      await generateBedrockBorder(uhcState.zone2Border);
 
       await executeRconCommand('title @a title {"text":"ZONA 2","color":"gold"}');
       await executeRconCommand('title @a subtitle {"text":"¡Borde TP a Zona 2!","color":"yellow"}');
@@ -331,12 +606,11 @@ async function startUhcGame() {
     // Zone 2 ends -> Zone 3 starts
     else if (uhcState.elapsedSeconds === zone2EndSeconds) {
       uhcState.state = 'zone3';
-      await executeRconCommand(`worldborder set ${uhcState.zone3Border}`);
       
-      // TP/spread all players inside the new border instantly
-      const maxRange = Math.max(15, Math.floor(uhcState.zone3Border / 2) - 10);
-      const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+      const { spreadDistance, maxRange } = calculateSpreadParams(uhcState.zone3Border);
       await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+      await executeRconCommand(`worldborder set ${uhcState.zone3Border}`);
+      await generateBedrockBorder(uhcState.zone3Border);
 
       await executeRconCommand('title @a title {"text":"ZONA FINAL","color":"red"}');
       await executeRconCommand('title @a subtitle {"text":"¡Borde TP a Zona 3!","color":"dark_red"}');
@@ -352,6 +626,26 @@ async function startUhcGame() {
       await executeRconCommand(`say ¡El borde final ha alcanzado su límite mínimo de ${uhcState.zone3Border} bloques!`);
     }
 
+    // Sincronizar en tiempo real el Scoreboard de Minecraft vía RCON
+    if (uhcState.active && rconClient.connected) {
+      try {
+        const stateLabel = (uhcState.state === 'grace' ? 'Gracia' :
+                            uhcState.state === 'zone1' ? 'Zona_1' :
+                            uhcState.state === 'zone2' ? 'Zona_2' :
+                            uhcState.state === 'zone3' ? 'Zona_Final' :
+                            uhcState.state === 'finished' ? 'Fin_Juego' : 'Espera');
+        
+        const serverIpClean = (uhcState.serverIp || 'play.rankit.net').replace(/ /g, '_');
+        const eventNameClean = (uhcState.eventName || 'UHC_Evento').replace(/ /g, '_');
+        
+        await executeRconCommand(`uhcscenario scoreboard ${serverIpClean} ${eventNameClean} ${stateLabel} ${uhcState.elapsedSeconds} ${uhcState.currentBorderSize} ${uhcState.aliveParticipants.length}`);
+      } catch (sbErr) {
+        console.error('[Scoreboard Sync] Error al sincronizar scoreboard vía RCON:', sbErr.message);
+      }
+    }
+    } catch (loopErr) {
+      console.error('[UHC Loop Error] Uncaught error in game loop timer:', loopErr.stack || loopErr.message);
+    }
   }, 1000);
 }
 
@@ -657,22 +951,48 @@ app.get('/api/stats', (req, res) => {
         // Map UUID to Username via usercache
         const username = cacheMap.get(cleanUuid) || uuid.substring(0, 8);
 
+        // Determine UHC-specific live tournament status
+        let status = 'Alive';
+        if (uhcState.placements && uhcState.placements[username.toLowerCase()] !== undefined) {
+          const placementRank = uhcState.placements[username.toLowerCase()];
+          status = placementRank === 1 ? 'Ganador' : `Top ${placementRank}`;
+        } else if (uhcState.active) {
+          const isAliveInUhc = uhcState.aliveParticipants && uhcState.aliveParticipants.some(p => p.toLowerCase() === username.toLowerCase());
+          status = isAliveInUhc ? 'Alive' : 'Eliminated';
+        } else {
+          status = deaths > 0 ? 'Eliminated' : 'Alive';
+        }
+
         statsList.push({
           uuid,
           name: username,
           kills,
           deaths,
-          status: deaths > 0 ? 'Eliminated' : 'Alive'
+          status
         });
       } catch (fileErr) {
         console.error(`[Parser] Error reading stats file ${filename}:`, fileErr.message);
       }
     });
 
-    // Sort leaderboard by kills descending, and alive status prioritized, then alphabetically
+    // Sort leaderboard by: Winner first, then Alive players (by kills), then Tops (by rank order), then General Eliminated
     statsList.sort((a, b) => {
+      const getPriority = (status) => {
+        if (status === 'Ganador') return 0;
+        if (status === 'Alive') return 1;
+        if (status.startsWith('Top ')) {
+          const num = parseInt(status.substring(4), 10);
+          return 2 + num; // smaller top rank goes first (e.g. Top 2 before Top 3)
+        }
+        if (status === 'Eliminated') return 1000;
+        return 2000;
+      };
+
+      const priorityA = getPriority(a.status);
+      const priorityB = getPriority(b.status);
+
+      if (priorityA !== priorityB) return priorityA - priorityB;
       if (b.kills !== a.kills) return b.kills - a.kills;
-      if (a.status !== b.status) return a.status === 'Alive' ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
 
@@ -702,6 +1022,8 @@ app.get('/api/uhc/status', (req, res) => {
     startBorderSize: uhcState.startBorderSize,
     playersPerBorder: uhcState.playersPerBorder,
     calcBorderByDensity: uhcState.calcBorderByDensity,
+    eventName: uhcState.eventName,
+    serverIp: uhcState.serverIp,
     scenarios: uhcState.scenarios,
     zone1Border: uhcState.zone1Border,
     zone1Time: uhcState.zone1Time,
@@ -714,6 +1036,20 @@ app.get('/api/uhc/status', (req, res) => {
   });
 });
 
+// GET /api/uhc/history
+app.get('/api/uhc/history', (req, res) => {
+  try {
+    const historyFile = UHC_HISTORY_FILE;
+    let history = [];
+    if (fs.existsSync(historyFile)) {
+      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    }
+    res.json(history);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 6. POST /api/uhc/config
 app.post('/api/uhc/config', (req, res) => {
   try {
@@ -724,6 +1060,8 @@ app.post('/api/uhc/config', (req, res) => {
       startBorderSize,
       playersPerBorder,
       calcBorderByDensity,
+      eventName,
+      serverIp,
       scenarios,
       zone1Border,
       zone1Time,
@@ -743,6 +1081,8 @@ app.post('/api/uhc/config', (req, res) => {
     if (startBorderSize !== undefined) uhcState.startBorderSize = parseInt(startBorderSize, 10);
     if (playersPerBorder !== undefined) uhcState.playersPerBorder = parseInt(playersPerBorder, 10);
     if (calcBorderByDensity !== undefined) uhcState.calcBorderByDensity = !!calcBorderByDensity;
+    if (eventName !== undefined) uhcState.eventName = eventName.toString().trim();
+    if (serverIp !== undefined) uhcState.serverIp = serverIp.toString().trim();
     if (scenarios !== undefined) uhcState.scenarios = { ...uhcState.scenarios, ...scenarios };
     
     if (zone1Border !== undefined) uhcState.zone1Border = parseInt(zone1Border, 10);
@@ -755,6 +1095,14 @@ app.post('/api/uhc/config', (req, res) => {
     if (zone3Time !== undefined) uhcState.zone3Time = parseInt(zone3Time, 10);
 
     saveUhcConfig();
+
+    // Sincronizar inmediatamente el Scoreboard en el plugin para reflejar IP/Evento en el lobby
+    if (rconClient.connected) {
+      const serverIpClean = (uhcState.serverIp || 'play.rankit.net').replace(/ /g, '_');
+      const eventNameClean = (uhcState.eventName || 'UHC_Evento').replace(/ /g, '_');
+      executeRconCommand(`uhcscenario scoreboard ${serverIpClean} ${eventNameClean} Espera 0 2000 0`).catch(() => {});
+    }
+
     res.json({ success: true, config: uhcState });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -789,6 +1137,10 @@ app.post('/api/uhc/stop', async (req, res) => {
     uhcState.active = false;
     uhcState.state = 'idle';
     uhcState.elapsedSeconds = 0;
+    uhcState.participants = [];
+    uhcState.aliveParticipants = [];
+    uhcState.placements = {};
+    uhcState.initialStats = {};
     
     if (uhcState.timerInterval) {
       clearInterval(uhcState.timerInterval);
@@ -801,6 +1153,12 @@ app.post('/api/uhc/stop', async (req, res) => {
     await executeRconCommand('gamerule naturalRegeneration true');
     await executeRconCommand('effect @a clear');
     await executeRconCommand('clear @a');
+    
+    // Disable custom scenarios in Java Spigot plugin
+    await executeRconCommand('uhcscenario active false');
+    await executeRconCommand('uhcscenario cutclean false');
+    await executeRconCommand('uhcscenario noclean false');
+    await executeRconCommand('uhcscenario timebomb false');
     
     // Clear custom scenarios
     if (uhcState.scenarios.doubleHealth) {

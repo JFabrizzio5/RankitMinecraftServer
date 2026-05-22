@@ -1,0 +1,9 @@
+name: UhcPvpScenarios
+version: 1.0
+main: com.antigravity.uhc.UhcPvpScenarios
+api-version: 1.8
+commands:
+  uhcscenario:
+    description: Habilitar o deshabilitar escenarios UHC.
+    permission: uhc.admin
+    usage: /uhcscenario <cutclean|noclean> <true|false>

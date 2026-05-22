@@ -167,12 +167,37 @@
                       <span class="toggle-desc">40 puntos de vida iniciales (4 filas de corazones).</span>
                     </span>
                   </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-timebomb">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">TimeBomb</span>
+                      <span class="toggle-desc">Los drops al morir se guardan en un cofre que explota tras 30s.</span>
+                    </span>
+                  </label>
                   
                 </div>
               </div>
 
               <!-- GENERAL & BORDER METRICS -->
               <div class="form-section row-fields">
+                <div class="form-group">
+                  <label for="uhc-event-name">Nombre del Evento</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-trophy input-icon"></i>
+                    <input type="text" id="uhc-event-name" value="UHC Evento" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="uhc-server-ip">IP del Servidor</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-network-wired input-icon"></i>
+                    <input type="text" id="uhc-server-ip" value="play.rankit.net" required>
+                  </div>
+                </div>
+
                 <div class="form-group">
                   <label for="uhc-grace-time">Tiempo de Gracia (minutos)</label>
                   <div class="input-wrapper">
@@ -324,6 +349,20 @@
         </div>
       </section>
 
+      <!-- TOURNAMENT HISTORY PANEL -->
+      <section class="content-panel glass-card history-panel">
+        <div class="panel-header">
+          <h2><i class="fa-solid fa-clock-rotate-left accent-text"></i> Historial de Torneos</h2>
+          <span class="badge">Resultados</span>
+        </div>
+        <div class="history-grid" id="history-container">
+          <div class="no-history">
+            <i class="fa-solid fa-calendar-minus"></i>
+            <p>No hay torneos registrados aún.</p>
+          </div>
+        </div>
+      </section>
+
       <!-- CONTROL & TERMINAL SIDEBAR -->
       <div class="sidebar">
         
@@ -339,9 +378,9 @@
               <span id="ping-value" class="ping-ms">-- ms</span>
             </div>
             <!-- Actions -->
-            <button id="btn-regen-lobby" class="btn btn-primary ripple" style="margin-bottom: 12px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;">
+            <!-- <button id="btn-regen-lobby" class="btn btn-primary ripple" style="margin-bottom: 12px; width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;">
               <i class="fa-solid fa-cubes"></i> REGENERAR LOBBY SPAWN
-            </button>
+            </button> -->
             <!-- Danger Zone -->
             <button id="btn-stop" class="btn btn-danger ripple">
               <i class="fa-solid fa-power-off"></i> APAGAR SERVIDOR
