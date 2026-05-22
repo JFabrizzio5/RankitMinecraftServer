@@ -30,6 +30,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const stopModal = document.getElementById('stop-modal');
   const modalCancel = document.getElementById('modal-cancel');
   const modalConfirm = document.getElementById('modal-confirm');
+
+  // Regen Modal Elements
+  const btnRegenWorld = document.getElementById('btn-regen-world');
+  const regenModal = document.getElementById('regen-modal');
+  const modalRegenCancel = document.getElementById('modal-regen-cancel');
+  const modalRegenConfirm = document.getElementById('modal-regen-confirm');
   
   const notificationContainer = document.getElementById('notification-container');
 
@@ -51,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Settings inputs
   const uhcGraceTime = document.getElementById('uhc-grace-time');
+  const uhcFinalHealTime = document.getElementById('uhc-final-heal-time');
+  const uhcWorldSeed = document.getElementById('uhc-world-seed');
   const uhcCalcDensity = document.getElementById('uhc-calc-density');
   const uhcStartBorder = document.getElementById('uhc-start-border');
   const uhcPlayersBorder = document.getElementById('uhc-players-border');
@@ -275,16 +283,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 3. Send Console Command via RCON
   async function sendCommand(commandText) {
-    if (!commandText.trim()) return;
+    let cleanText = commandText.trim();
+    if (!cleanText) return;
 
-    printToConsole(`mc-server$ /${commandText}`, 'input-cmd');
+    // Strip leading slashes
+    while (cleanText.startsWith('/')) {
+      cleanText = cleanText.substring(1);
+    }
+
+    printToConsole(`mc-server$ /${cleanText}`, 'input-cmd');
     consoleInput.value = '';
 
     try {
       const res = await fetch('/api/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: commandText })
+        body: JSON.stringify({ command: cleanText })
       });
 
       const data = await res.json();
@@ -361,6 +375,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Core parameters
     uhcGraceTime.value = config.graceTime || 20;
+    uhcFinalHealTime.value = config.finalHealTime || 10;
+    uhcWorldSeed.value = config.worldSeed || '';
     uhcCalcDensity.checked = !!config.calcBorderByDensity;
     uhcStartBorder.value = config.startBorderSize || 2000;
     uhcPlayersBorder.value = config.playersPerBorder || 4;
@@ -551,6 +567,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const config = {
       graceTime: parseInt(uhcGraceTime.value, 10),
+      finalHealTime: parseInt(uhcFinalHealTime.value, 10),
+      worldSeed: uhcWorldSeed.value,
       startBorderSize: parseInt(uhcStartBorder.value, 10),
       playersPerBorder: parseInt(uhcPlayersBorder.value, 10),
       calcBorderByDensity: uhcCalcDensity.checked,
@@ -646,6 +664,64 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       showNotification('Fallo de red al detener el UHC.', 'danger');
+    }
+  });
+
+  // --- WORLD REGENERATION MODAL & ACTIONS ---
+  btnRegenWorld.addEventListener('click', () => {
+    if (isUhcActive) {
+      showNotification('No se puede regenerar el mundo mientras hay un UHC activo.', 'danger');
+      return;
+    }
+    if (!isServerOnline) {
+      showNotification('El servidor de Minecraft está apagado.', 'danger');
+      return;
+    }
+    if (!isRconConnected) {
+      showNotification('La consola RCON está desconectada.', 'danger');
+      return;
+    }
+    regenModal.classList.add('active');
+  });
+
+  modalRegenCancel.addEventListener('click', () => {
+    regenModal.classList.remove('active');
+  });
+
+  modalRegenConfirm.addEventListener('click', async () => {
+    regenModal.classList.remove('active');
+    
+    try {
+      showNotification('Guardando parámetros de semilla...', 'info');
+      // Save config first to sync inputs
+      btnUhcSave.click();
+      
+      const seedVal = uhcWorldSeed.value;
+      showNotification('Iniciando regeneración del mundo UHC...', 'info');
+      printToConsole(`[World Regenerator] Solicitando regeneración con semilla: "${seedVal || 'Aleatoria'}"`, 'system');
+      
+      const res = await fetch('/api/world/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seed: seedVal })
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showNotification('Regeneración iniciada. Servidor deteniéndose...', 'success');
+        printToConsole('[World Regenerator] Comando enviado con éxito. El servidor se está reiniciando y eliminará las carpetas del mapa.', 'system');
+      } else {
+        showNotification(data.error || 'No se pudo regenerar el mundo.', 'danger');
+      }
+    } catch (err) {
+      showNotification('Error de red al regenerar el mundo.', 'danger');
+    }
+  });
+
+  // Close modals when clicking outer backdrop
+  regenModal.addEventListener('click', (e) => {
+    if (e.target === regenModal) {
+      regenModal.classList.remove('active');
     }
   });
 

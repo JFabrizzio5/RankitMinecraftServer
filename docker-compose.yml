@@ -27,7 +27,7 @@ services:
     ports:
       - "3005:3000"
     volumes:
-      - ./mc-data:/usr/src/app/mc-data:ro
+      - ./mc-data:/usr/src/app/mc-data:rw
     environment:
       PORT: "3000"
       RCON_HOST: "mc-server"

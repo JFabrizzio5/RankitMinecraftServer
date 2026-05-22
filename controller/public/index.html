@@ -181,6 +181,14 @@
                   </div>
                 </div>
 
+                <div class="form-group">
+                  <label for="uhc-final-heal-time">Tiempo de Final Heal (minutos)</label>
+                  <div class="input-wrapper">
+                    <i class="fa-solid fa-heart-pulse input-icon"></i>
+                    <input type="number" id="uhc-final-heal-time" value="10" min="1" required>
+                  </div>
+                </div>
+
                 <div class="form-group checkbox-cell">
                   <label class="checkbox-custom-container">
                     <input type="checkbox" id="uhc-calc-density">
@@ -252,6 +260,28 @@
                   </div>
                   
                 </div>
+              </div>
+
+              <!-- WORLD SEED & REGENERATION SECTION -->
+              <div class="form-section">
+                <h4>Semilla del Mundo & Regeneración</h4>
+                <div class="row-fields" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+                  <div class="form-group" style="flex: 1; min-width: 200px;">
+                    <label for="uhc-world-seed">Semilla del Mundo (Vacío para Aleatoria)</label>
+                    <div class="input-wrapper">
+                      <i class="fa-solid fa-seedling input-icon"></i>
+                      <input type="text" id="uhc-world-seed" placeholder="Ej: 1234567890 o mi_semilla">
+                    </div>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <button type="button" id="btn-regen-world" class="btn btn-danger ripple" style="display: flex; align-items: center; gap: 8px;">
+                      <i class="fa-solid fa-rotate"></i> Aplicar Semilla y Regenerar Mundo
+                    </button>
+                  </div>
+                </div>
+                <span class="field-help-text" style="color: #f87171; display: flex; align-items: center; gap: 6px; margin-top: 8px; font-weight: 500;">
+                  <i class="fa-solid fa-triangle-exclamation"></i> ¡ADVERTENCIA! Regenerar el mundo borrará los mundos actuales (world, nether y end) y reiniciará el servidor Minecraft para aplicar la nueva semilla.
+                </span>
               </div>
 
               <!-- SAVE ACTION -->
@@ -333,6 +363,7 @@
             
             <!-- Quick command actions -->
             <div class="quick-commands">
+              <button class="cmd-pill" style="border-color: rgba(234, 179, 8, 0.4); background: rgba(234, 179, 8, 0.1);" data-cmd="op jos5_yt"><i class="fa-solid fa-crown" style="color: #eab308; margin-right: 4px;"></i> /op jos5_yt</button>
               <button class="cmd-pill" data-cmd="list">/list</button>
               <button class="cmd-pill" data-cmd="toggledownfall">/toggledownfall</button>
               <button class="cmd-pill" data-cmd="time set day">/time set day</button>
@@ -367,6 +398,22 @@
       <div class="modal-buttons">
         <button id="modal-cancel" class="btn btn-secondary">Cancelar</button>
         <button id="modal-confirm" class="btn btn-danger">Confirmar Parada</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REGENERATE WORLD CONFIRMATION MODAL -->
+  <div id="regen-modal" class="modal-overlay">
+    <div class="modal glass-card">
+      <div class="modal-icon">
+        <i class="fa-solid fa-triangle-exclamation text-danger"></i>
+      </div>
+      <h2>¿Confirmar Regeneración de Mundo?</h2>
+      <p>Esta acción cambiará la semilla en <strong>server.properties</strong>, eliminará permanentemente las carpetas <strong>world</strong>, <strong>world_nether</strong> y <strong>world_the_end</strong>, y reiniciará el servidor de Minecraft.</p>
+      <p style="color: #f87171; font-weight: 600;">¡Todos los inventarios, estadísticas y construcciones actuales se perderán!</p>
+      <div class="modal-buttons">
+        <button id="modal-regen-cancel" class="btn btn-secondary">Cancelar</button>
+        <button id="modal-regen-confirm" class="btn btn-danger">Confirmar Regeneración</button>
       </div>
     </div>
   </div>

