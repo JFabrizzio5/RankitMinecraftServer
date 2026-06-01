@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.vexsoftware</groupId>
+  <artifactId>votifier</artifactId>
+  <versioning>
+    <release>LATEST</release>
+    <versions>
+      <version>LATEST</version>
+      <version>1.8.8-R0.1-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20260523073129</lastUpdated>
+  </versioning>
+</metadata>

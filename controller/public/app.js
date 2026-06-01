@@ -58,6 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const scenNoClean = document.getElementById('scen-noclean');
   const scenDoubleHealth = document.getElementById('scen-doublehealth');
   const scenTimeBomb = document.getElementById('scen-timebomb');
+  const scenVanillaPlus = document.getElementById('scen-vanillaplus');
+  const scenEnchant17 = document.getElementById('scen-enchant17');
   
   // Settings inputs
   const uhcGraceTime = document.getElementById('uhc-grace-time');
@@ -393,6 +395,8 @@ document.addEventListener('DOMContentLoaded', () => {
       scenNoClean.checked = !!config.scenarios.noClean;
       scenDoubleHealth.checked = !!config.scenarios.doubleHealth;
       scenTimeBomb.checked = !!config.scenarios.timeBomb;
+      scenVanillaPlus.checked = !!config.scenarios.vanillaPlus;
+      scenEnchant17.checked = !!config.scenarios.enchant17;
     }
     
     // Core parameters
@@ -603,7 +607,9 @@ document.addEventListener('DOMContentLoaded', () => {
         fireless: scenFireless.checked,
         noClean: scenNoClean.checked,
         doubleHealth: scenDoubleHealth.checked,
-        timeBomb: scenTimeBomb.checked
+        timeBomb: scenTimeBomb.checked,
+        vanillaPlus: scenVanillaPlus.checked,
+        enchant17: scenEnchant17.checked
       },
       zone1Border: parseInt(uhcZ1Border.value, 10),
       zone1Time: parseInt(uhcZ1Time.value, 10),
@@ -752,12 +758,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  let localHistory = []; // Cache to store tournament history records locally
+
   async function loadTournamentHistory() {
     try {
       const res = await fetch('/api/uhc/history');
       if (!res.ok) throw new Error('History API unreachable');
-      const historyList = await res.json();
-      renderTournamentHistory(historyList);
+      localHistory = await res.json();
+      renderTournamentHistory(localHistory);
     } catch (err) {
       console.error('Error fetching tournament history:', err);
     }
@@ -812,12 +820,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <div class="history-card glass-card">
-          <div class="history-card-header">
+          <div class="history-card-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
             <div class="history-event-info">
               <span class="history-event-name font-mono text-gold">${record.eventName}</span>
               <span class="history-date"><i class="fa-solid fa-calendar-days"></i> ${dateFormatted}</span>
             </div>
-            <span class="history-server-ip"><i class="fa-solid fa-network-wired"></i> ${record.serverIp}</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="history-server-ip" style="margin-right: 4px;"><i class="fa-solid fa-network-wired"></i> ${record.serverIp}</span>
+              <button class="btn-history-edit btn-sm btn-icon ripple" data-index="${index}" title="Editar Torneo" style="background: rgba(var(--color-accent-rgb), 0.1); border: 1px solid rgba(var(--color-accent-rgb), 0.2); border-radius: 4px; color: var(--color-accent); cursor: pointer; padding: 4px 6px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; height: 24px; width: 24px;">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="btn-history-delete btn-sm btn-icon ripple" data-index="${index}" title="Eliminar Torneo" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 4px; color: #f87171; cursor: pointer; padding: 4px 6px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; height: 24px; width: 24px;">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
           </div>
           
           <div class="history-card-body">
@@ -859,17 +875,412 @@ document.addEventListener('DOMContentLoaded', () => {
     historyContainer.innerHTML = html;
   }
 
+  // --- HISTORY EDITING CRUD LOGIC ---
+  const historyModal = document.getElementById('history-modal');
+  const btnAddHistory = document.getElementById('btn-add-history');
+  const btnHistoryModalClose = document.getElementById('btn-history-modal-close');
+  const btnHistoryModalCancel = document.getElementById('btn-history-modal-cancel');
+  const historyForm = document.getElementById('history-form');
+  const historyEditIndexInput = document.getElementById('history-edit-index');
+  const histEventName = document.getElementById('hist-event-name');
+  const histServerIp = document.getElementById('hist-server-ip');
+  const histWinner = document.getElementById('hist-winner');
+  const histWinnerKills = document.getElementById('hist-winner-kills');
+  const histDuration = document.getElementById('hist-duration');
+  const histSeed = document.getElementById('hist-seed');
+  const histPlacements = document.getElementById('hist-placements');
+  const historyModalTitle = document.getElementById('history-modal-title');
+
+  // Open modal for adding a new record
+  btnAddHistory.addEventListener('click', () => {
+    historyForm.reset();
+    historyEditIndexInput.value = "-1";
+    historyModalTitle.innerText = "Registrar Torneo Manual";
+    histServerIp.value = "play.rankit.net";
+    histEventName.value = "UHC Evento #" + (localHistory.length + 1);
+    histWinner.value = "";
+    histWinnerKills.value = "0";
+    histDuration.value = "45:00";
+    histSeed.value = "";
+    histPlacements.value = "";
+    historyModal.classList.add('active');
+  });
+
+  // Close modal
+  function closeHistoryModal() {
+    historyModal.classList.remove('active');
+  }
+  btnHistoryModalClose.addEventListener('click', closeHistoryModal);
+  btnHistoryModalCancel.addEventListener('click', closeHistoryModal);
+
+  // Close when clicking overlay
+  historyModal.addEventListener('click', (e) => {
+    if (e.target === historyModal) {
+      closeHistoryModal();
+    }
+  });
+
+  // Edit / Delete button click handling via event delegation
+  historyContainer.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('.btn-history-edit');
+    const deleteBtn = e.target.closest('.btn-history-delete');
+    
+    if (editBtn) {
+      const index = parseInt(editBtn.dataset.index, 10);
+      const record = localHistory[index];
+      if (!record) return;
+
+      historyForm.reset();
+      historyEditIndexInput.value = index;
+      historyModalTitle.innerText = "Editar Torneo - " + record.eventName;
+      
+      histEventName.value = record.eventName || "";
+      histServerIp.value = record.serverIp || "play.rankit.net";
+      histWinner.value = record.winner || "";
+      histWinnerKills.value = record.winnerKills !== undefined ? record.winnerKills : 0;
+      histDuration.value = record.duration || "";
+      histSeed.value = record.worldSeed || "";
+
+      // Format placements back into text
+      if (record.placements && record.placements.length > 0) {
+        histPlacements.value = record.placements.map(p => `${p.name}, ${p.kills}`).join('\n');
+      } else {
+        histPlacements.value = "";
+      }
+
+      historyModal.classList.add('active');
+    } else if (deleteBtn) {
+      const index = parseInt(deleteBtn.dataset.index, 10);
+      const record = localHistory[index];
+      if (!record) return;
+
+      if (confirm(`¿Estás seguro de que deseas eliminar permanentemente el registro del torneo "${record.eventName}"?`)) {
+        try {
+          const res = await fetch(`/api/uhc/history/${index}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Error al eliminar registro');
+          showNotification('Torneo eliminado exitosamente.', 'success');
+          loadTournamentHistory();
+        } catch (err) {
+          showNotification('Error al eliminar torneo: ' + err.message, 'danger');
+        }
+      }
+    }
+  });
+
+  // Form submission (Save / Add)
+  historyForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const index = parseInt(historyEditIndexInput.value, 10);
+    const eventName = histEventName.value.trim();
+    const serverIp = histServerIp.value.trim();
+    const winner = histWinner.value.trim();
+    const winnerKills = parseInt(histWinnerKills.value, 10) || 0;
+    const duration = histDuration.value.trim();
+    const worldSeed = histSeed.value.trim();
+    
+    // Parse placements
+    const lines = histPlacements.value.split('\n').map(l => l.trim()).filter(Boolean);
+    const placements = lines.map((line, idx) => {
+      const parts = line.split(',');
+      const name = parts[0].trim();
+      const kills = parts[1] ? parseInt(parts[1].trim(), 10) : 0;
+      return {
+        name,
+        kills: isNaN(kills) ? 0 : kills,
+        rank: idx + 1,
+        status: (idx === 0) ? 'Ganador' : `Top ${idx + 1}`
+      };
+    });
+
+    // Fallback if placements is empty or doesn't have the winner as first element
+    if (placements.length === 0 && winner) {
+      placements.push({
+        name: winner,
+        kills: winnerKills,
+        rank: 1,
+        status: 'Ganador'
+      });
+    }
+
+    const payload = {
+      winner,
+      winnerKills,
+      eventName,
+      serverIp,
+      duration,
+      worldSeed,
+      placements
+    };
+
+    try {
+      let url = '/api/uhc/history';
+      let method = 'POST';
+      if (index >= 0) {
+        url = `/api/uhc/history/${index}`;
+        method = 'PUT';
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('Error al guardar registro en la API');
+      
+      showNotification(index >= 0 ? 'Torneo actualizado exitosamente.' : 'Torneo registrado exitosamente.', 'success');
+      closeHistoryModal();
+      loadTournamentHistory();
+    } catch (err) {
+      showNotification('Error al guardar torneo: ' + err.message, 'danger');
+    }
+  });
+
+  // --- PRACTICE ARENA & DUELS MODULE ---
+  let isPracticeActive = false;
+  let practicePlayersList = [];
+
+  async function updatePracticeStatus() {
+    try {
+      const res = await fetch('/api/practice/status');
+      if (!res.ok) throw new Error('API Practice status error');
+      const data = await res.json();
+
+      const badge = document.getElementById('practice-badge');
+      const statusVal = document.getElementById('practice-status-val');
+      const toggleBtn = document.getElementById('btn-practice-toggle');
+      const playersCountText = document.getElementById('practice-players-count');
+
+      isPracticeActive = data.active;
+      practicePlayersList = data.players || [];
+
+      // Update badge and status displays
+      if (isPracticeActive) {
+        badge.textContent = "Practice Activo";
+        badge.style.background = "rgba(16, 185, 129, 0.2)";
+        badge.style.color = "#34d399";
+        badge.style.border = "1px solid rgba(16, 185, 129, 0.4)";
+
+        statusVal.textContent = "ACTIVO";
+        statusVal.style.color = "#34d399";
+
+        toggleBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> DESHABILITAR PRACTICE';
+        toggleBtn.className = "btn btn-danger ripple";
+        toggleBtn.style.background = "var(--color-danger)";
+        toggleBtn.style.border = "none";
+      } else {
+        badge.textContent = "Practice Desactivado";
+        badge.style.background = "rgba(239, 68, 68, 0.2)";
+        badge.style.color = "#f87171";
+        badge.style.border = "1px solid rgba(239, 68, 68, 0.4)";
+
+        statusVal.textContent = "DESACTIVADO";
+        statusVal.style.color = "#f87171";
+
+        toggleBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> HABILITAR PRACTICE';
+        toggleBtn.className = "btn btn-success ripple";
+        toggleBtn.style.background = "var(--color-success)";
+        toggleBtn.style.border = "none";
+      }
+
+      playersCountText.textContent = `${practicePlayersList.length} jugadores`;
+
+      // 2. Fetch general online players to populate duel selectors
+      const statusRes = await fetch('/api/status');
+      const statusData = await statusRes.json();
+      const onlinePlayers = statusData.players || [];
+
+      const p1Select = document.getElementById('duel-p1-select');
+      const p2Select = document.getElementById('duel-p2-select');
+      const currentP1 = p1Select.value;
+      const currentP2 = p2Select.value;
+
+      p1Select.innerHTML = '<option value="">-- Seleccionar --</option>';
+      p2Select.innerHTML = '<option value="">-- Seleccionar --</option>';
+
+      onlinePlayers.forEach(name => {
+        const opt1 = document.createElement('option');
+        opt1.value = name;
+        opt1.textContent = name;
+        if (name === currentP1) opt1.selected = true;
+        p1Select.appendChild(opt1);
+
+        const opt2 = document.createElement('option');
+        opt2.value = name;
+        opt2.textContent = name;
+        if (name === currentP2) opt2.selected = true;
+        p2Select.appendChild(opt2);
+      });
+
+      // 3. Render Players Table
+      const playersBody = document.getElementById('practice-players-body');
+      if (onlinePlayers.length === 0) {
+        playersBody.innerHTML = `
+          <tr>
+            <td colspan="3" style="text-align: center; color: var(--text-muted); padding: 20px;">No hay jugadores online.</td>
+          </tr>
+        `;
+      } else {
+        let playersHtml = '';
+        onlinePlayers.forEach(name => {
+          const inPractice = practicePlayersList.includes(name);
+          const location = inPractice ? '<span class="status-badge connected" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); padding: 4px 8px; border-radius: 4px; font-weight: 600;">Practice Arena</span>' : '<span class="status-badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); padding: 4px 8px; border-radius: 4px;">Lobby Spawn</span>';
+          const actionButton = inPractice
+            ? `<button class="btn btn-sm btn-danger btn-p-leave" data-player="${name}" style="padding: 6px 12px; font-size: 11px; border-radius: var(--radius-sm); border: none; background: var(--color-danger); color: #fff; cursor: pointer; font-weight:600;">Sacar</button>`
+            : `<button class="btn btn-sm btn-success btn-p-join" data-player="${name}" style="padding: 6px 12px; font-size: 11px; border-radius: var(--radius-sm); border: none; background: var(--color-success); color: #fff; cursor: pointer; font-weight:600;">Mandar</button>`;
+
+          playersHtml += `
+            <tr>
+              <td style="font-weight: 600; color: #fff; vertical-align: middle; padding: 12px 8px;">${name}</td>
+              <td style="vertical-align: middle; padding: 12px 8px;">${location}</td>
+              <td style="text-align: right; vertical-align: middle; padding: 12px 8px;">${actionButton}</td>
+            </tr>
+          `;
+        });
+        playersBody.innerHTML = playersHtml;
+      }
+
+      // 4. Render Practice Leaderboard
+      const leaderboardBody = document.getElementById('practice-leaderboard-body');
+      const killsMap = data.kills || {};
+      const deathsMap = data.deaths || {};
+      
+      const statsPlayersSet = new Set([...Object.keys(killsMap), ...Object.keys(deathsMap)]);
+      const statsList = Array.from(statsPlayersSet).map(name => {
+        const pk = killsMap[name] || 0;
+        const pd = deathsMap[name] || 0;
+        const kd = pd === 0 ? pk : (pk / pd).toFixed(2);
+        return { name, kills: pk, deaths: pd, kd };
+      });
+
+      statsList.sort((a, b) => b.kills - a.kills || b.kd - a.kd);
+
+      if (statsList.length === 0) {
+        leaderboardBody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">No hay peleas registradas aún.</td>
+          </tr>
+        `;
+      } else {
+        let leaderboardHtml = '';
+        statsList.forEach((stat, idx) => {
+          let rankLabel = idx + 1;
+          if (idx === 0) rankLabel = '👑';
+          leaderboardHtml += `
+            <tr>
+              <td class="col-rank font-mono" style="font-weight: 700; color: ${idx === 0 ? '#fbbf24' : 'var(--text-muted)'}; padding: 12px 8px; text-align: center; vertical-align: middle;">${rankLabel}</td>
+              <td style="font-weight: 600; color: #fff; padding: 12px 8px; vertical-align: middle;">${stat.name}</td>
+              <td style="text-align: right; font-weight: 700; color: #34d399; padding: 12px 8px; vertical-align: middle;">${stat.kills}</td>
+              <td style="text-align: right; color: #f87171; padding: 12px 8px; vertical-align: middle;">${stat.deaths}</td>
+              <td style="text-align: right; font-weight: 700; color: #38bdf8; padding: 12px 8px; vertical-align: middle;">${stat.kd}</td>
+            </tr>
+          `;
+        });
+        leaderboardBody.innerHTML = leaderboardHtml;
+      }
+
+    } catch (err) {
+      console.error('Error in updatePracticeStatus:', err);
+    }
+  }
+
+  // --- PRACTICE EVENT LISTENERS ---
+  
+  // Toggle Practice active/inactive
+  document.getElementById('btn-practice-toggle').addEventListener('click', async () => {
+    const nextState = !isPracticeActive;
+    try {
+      const res = await fetch('/api/practice/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: nextState })
+      });
+      if (!res.ok) throw new Error('Error al cambiar modo Practice');
+      showNotification(nextState ? '¡Modo Practice activado en el servidor!' : 'Modo Practice desactivado.', 'success');
+      updatePracticeStatus();
+    } catch (err) {
+      showNotification('Error al cambiar modo Practice: ' + err.message, 'danger');
+    }
+  });
+
+  // Players list actions (Join / Leave) delegation
+  document.getElementById('practice-players-body').addEventListener('click', async (e) => {
+    const joinBtn = e.target.closest('.btn-p-join');
+    const leaveBtn = e.target.closest('.btn-p-leave');
+    
+    if (joinBtn) {
+      const name = joinBtn.dataset.player;
+      try {
+        const res = await fetch('/api/practice/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player: name })
+        });
+        if (!res.ok) throw new Error('Error al enviar jugador a Practice');
+        showNotification(`Mandando a ${name} a la arena de Practice.`, 'success');
+        updatePracticeStatus();
+      } catch (err) {
+        showNotification('Error al mandar jugador: ' + err.message, 'danger');
+      }
+    } else if (leaveBtn) {
+      const name = leaveBtn.dataset.player;
+      try {
+        const res = await fetch('/api/practice/leave', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player: name })
+        });
+        if (!res.ok) throw new Error('Error al sacar jugador de Practice');
+        showNotification(`Sacando a ${name} de Practice de regreso al Lobby.`, 'success');
+        updatePracticeStatus();
+      } catch (err) {
+        showNotification('Error al sacar jugador: ' + err.message, 'danger');
+      }
+    }
+  });
+
+  // Launch Duel 1v1
+  document.getElementById('btn-launch-duel').addEventListener('click', async () => {
+    const p1 = document.getElementById('duel-p1-select').value;
+    const p2 = document.getElementById('duel-p2-select').value;
+    
+    if (!p1 || !p2) {
+      showNotification('Por favor, selecciona dos jugadores para el duelo.', 'warning');
+      return;
+    }
+    if (p1 === p2) {
+      showNotification('No puedes emparejar a un jugador contra sí mismo.', 'warning');
+      return;
+    }
+    
+    try {
+      const res = await fetch('/api/practice/duel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p1, p2 })
+      });
+      if (!res.ok) throw new Error('Error al emparejar duelo en la API');
+      showNotification(`¡Duelo iniciado exitosamente entre ${p1} y ${p2}!`, 'success');
+      updatePracticeStatus();
+    } catch (err) {
+      showNotification('Error al iniciar duelo: ' + err.message, 'danger');
+    }
+  });
+
   // --- AUTOMATIC REFRESH POLLING ---
   // Poll immediately on mount
   updateStatus();
   updateStats();
   updateUhcStatus();
+  updatePracticeStatus();
   loadTournamentHistory();
 
   // Schedule status check, stats fetch, and UHC poll loops every 3 seconds
   setInterval(updateStatus, 3000);
   setInterval(updateStats, 3000);
   setInterval(updateUhcStatus, 3000);
+  setInterval(updatePracticeStatus, 3000);
   setInterval(loadTournamentHistory, 6000);
 
   showNotification('Dashboard de Minecraft UHC Inicializado.', 'success');

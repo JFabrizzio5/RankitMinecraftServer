@@ -168,12 +168,30 @@
                     </span>
                   </label>
 
-                  <label class="toggle-switch">
+                   <label class="toggle-switch">
                     <input type="checkbox" id="scen-timebomb">
                     <span class="toggle-slider"></span>
                     <span class="toggle-text">
                       <span class="toggle-title">TimeBomb</span>
                       <span class="toggle-desc">Los drops al morir se guardan en un cofre que explota tras 30s.</span>
+                    </span>
+                  </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-vanillaplus">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">Vanilla Plus</span>
+                      <span class="toggle-desc">Grava da 100% pedernal y hojas de roble/roble oscuro 10% manzanas.</span>
+                    </span>
+                  </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="scen-enchant17">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">
+                      <span class="toggle-title">Encantamientos 1.7.10</span>
+                      <span class="toggle-desc">Mesa consume todos los niveles de coste y no requiere lapislázuli.</span>
                     </span>
                   </label>
                   
@@ -321,6 +339,101 @@
         </div>
       </section>
 
+      <!-- PRACTICE ARENA & DUELS PANEL -->
+      <section class="content-panel glass-card practice-panel" style="margin-bottom: 24px;">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; margin-bottom: 16px;">
+          <h2><i class="fa-solid fa-hand-fist accent-text"></i> Arena de Practice & Duelos PvP</h2>
+          <span id="practice-badge" class="badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);">Practice Desactivado</span>
+        </div>
+        
+        <div class="practice-container">
+          <!-- LIVE CONTROL & TOGGLE -->
+          <div class="practice-live-hud" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 16px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px;">
+            <div class="hud-metrics" style="display: flex; gap: 24px; flex: 1;">
+              <div class="hud-box">
+                <span class="hud-label" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 4px;"><i class="fa-solid fa-gamepad"></i> MODO PRACTICE</span>
+                <span id="practice-status-val" class="hud-value font-mono text-danger" style="font-size: 1.25rem; font-weight: 700; color: #f87171;">DESACTIVADO</span>
+              </div>
+              <div class="hud-box">
+                <span class="hud-label" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 4px;"><i class="fa-solid fa-users"></i> COMBATIENTES EN ARENA</span>
+                <span id="practice-players-count" class="hud-value font-mono" style="font-size: 1.25rem; font-weight: 700;">0 jugadores</span>
+              </div>
+            </div>
+            
+            <div class="hud-actions">
+              <button id="btn-practice-toggle" class="btn btn-success ripple" style="min-width: 240px; padding: 12px 20px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                <i class="fa-solid fa-power-off"></i> HABILITAR MODO PRACTICE
+              </button>
+            </div>
+          </div>
+
+          <!-- DUELS & PLAYERS MANAGEMENT -->
+          <div class="practice-management-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px; flex-wrap: wrap;">
+            <div class="players-column glass-card" style="background: rgba(0,0,0,0.15); padding: 16px; border: 1px solid rgba(255,255,255,0.05);">
+              <h3 style="font-size: 1rem; margin-bottom: 12px; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-people-arrows"></i> Gestión de Jugadores</h3>
+              <div class="p-players-list-wrapper" style="max-height: 250px; overflow-y: auto;">
+                <table class="premium-table p-players-table" style="width: 100%;">
+                  <thead>
+                    <tr>
+                      <th style="font-size: 11px; text-transform: uppercase;">Jugador</th>
+                      <th style="font-size: 11px; text-transform: uppercase;">Ubicación</th>
+                      <th style="font-size: 11px; text-transform: uppercase; text-align: right;">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody id="practice-players-body">
+                    <tr>
+                      <td colspan="3" class="loading-td" style="text-align: center; color: var(--text-muted); padding: 20px;">Esperando que conecten jugadores...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="leaderboard-column glass-card" style="background: rgba(0,0,0,0.15); padding: 16px; border: 1px solid rgba(255,255,255,0.05);">
+              <h3 style="font-size: 1rem; margin-bottom: 12px; font-weight: 600; color: #fbbf24; display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-crown" style="color: #fbbf24;"></i> Top Kills Practice</h3>
+              <div class="p-leaderboard-wrapper" style="max-height: 250px; overflow-y: auto;">
+                <table class="premium-table" style="width: 100%;">
+                  <thead>
+                    <tr>
+                      <th class="col-rank" style="font-size: 11px;">Pos.</th>
+                      <th style="font-size: 11px;">Jugador</th>
+                      <th style="font-size: 11px; text-align: right;">Kills</th>
+                      <th style="font-size: 11px; text-align: right;">Deaths</th>
+                      <th style="font-size: 11px; text-align: right;">K/D</th>
+                    </tr>
+                  </thead>
+                  <tbody id="practice-leaderboard-body">
+                    <tr>
+                      <td colspan="5" class="loading-td" style="text-align: center; color: var(--text-muted); padding: 20px;">No hay peleas registradas aún.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAUNCH DUEL INTERACTIVE SECTION -->
+          <div class="duel-launcher-section glass-card" style="margin-top: 20px; padding: 16px; border-radius: var(--radius-sm); border: 1px dashed rgba(255,255,255,0.15); background: rgba(0,0,0,0.2);">
+            <h4 style="font-size: 0.95rem; font-weight: 600; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-bolt text-gold"></i> Organizador de Duelos 1v1 en Vivo</h4>
+            <div class="duel-selector-fields" style="display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap;">
+              <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0; display: flex; flex-direction: column; gap: 6px;">
+                <label for="duel-p1-select" style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Combatiente 1</label>
+                <select id="duel-p1-select" style="width: 100%; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 10px; border-radius: var(--radius-sm); outline: none; font-size: 0.9rem; font-family: var(--font-outfit);"></select>
+              </div>
+              <div class="versus-label" style="font-weight: 800; color: var(--color-accent); font-size: 1.2rem; align-self: center; margin-bottom: 8px;">VS</div>
+              <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0; display: flex; flex-direction: column; gap: 6px;">
+                <label for="duel-p2-select" style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Combatiente 2</label>
+                <select id="duel-p2-select" style="width: 100%; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); color: #fff; padding: 10px; border-radius: var(--radius-sm); outline: none; font-size: 0.9rem; font-family: var(--font-outfit);"></select>
+              </div>
+              <button id="btn-launch-duel" class="btn btn-primary ripple" style="padding: 10px 24px; font-weight: 600; height: 42px; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-gamepad"></i> ¡INICIAR DUELO!
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
       <!-- LEADERBOARD PANEL -->
       <section class="content-panel glass-card leaderboard-panel">
         <div class="panel-header">
@@ -351,9 +464,14 @@
 
       <!-- TOURNAMENT HISTORY PANEL -->
       <section class="content-panel glass-card history-panel">
-        <div class="panel-header">
+        <div class="panel-header" style="justify-content: space-between; align-items: center;">
           <h2><i class="fa-solid fa-clock-rotate-left accent-text"></i> Historial de Torneos</h2>
-          <span class="badge">Resultados</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="btn-add-history" class="btn btn-sm btn-primary" style="padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; background: var(--color-accent); border: none; border-radius: var(--radius-sm); color: #fff; cursor: pointer; font-weight: 600; transition: var(--transition-smooth);">
+              <i class="fa-solid fa-plus"></i> Registrar Torneo
+            </button>
+            <span class="badge">Resultados</span>
+          </div>
         </div>
         <div class="history-grid" id="history-container">
           <div class="no-history">
@@ -454,6 +572,85 @@
         <button id="modal-regen-cancel" class="btn btn-secondary">Cancelar</button>
         <button id="modal-regen-confirm" class="btn btn-danger">Confirmar Regeneración</button>
       </div>
+    </div>
+  </div>
+
+  <!-- HISTORY RECORD MODAL -->
+  <div id="history-modal" class="modal-overlay">
+    <div class="modal glass-card" style="max-width: 550px; text-align: left;">
+      <div class="panel-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0; font-size: 1.3rem;"><i class="fa-solid fa-trophy accent-text" style="margin-right: 8px;"></i> <span id="history-modal-title">Registrar Torneo</span></h2>
+        <button id="btn-history-modal-close" style="background: none; border: none; color: #fff; cursor: pointer; font-size: 1.2rem;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="history-form" onsubmit="return false;">
+        <input type="hidden" id="history-edit-index" value="-1">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="form-group">
+            <label for="hist-event-name">Nombre del Evento</label>
+            <div class="input-wrapper">
+              <span class="input-icon"><i class="fa-solid fa-heading"></i></span>
+              <input type="text" id="hist-event-name" required placeholder="UHC Torneo #1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="hist-server-ip">IP del Servidor</label>
+            <div class="input-wrapper">
+              <span class="input-icon"><i class="fa-solid fa-server"></i></span>
+              <input type="text" id="hist-server-ip" required placeholder="play.rankit.net">
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="form-group">
+            <label for="hist-winner">Ganador (Username)</label>
+            <div class="input-wrapper">
+              <span class="input-icon"><i class="fa-solid fa-user"></i></span>
+              <input type="text" id="hist-winner" required placeholder="jos5_yt">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="hist-winner-kills">Kills del Ganador</label>
+            <div class="input-wrapper">
+              <span class="input-icon"><i class="fa-solid fa-skull"></i></span>
+              <input type="number" id="hist-winner-kills" min="0" required placeholder="5">
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="form-group">
+            <label for="hist-duration">Duración (MM:SS o HH:MM:SS)</label>
+            <div class="input-wrapper">
+              <span class="input-icon"><i class="fa-solid fa-hourglass-half"></i></span>
+              <input type="text" id="hist-duration" required placeholder="45:30">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="hist-seed">Semilla del Mundo</label>
+            <div class="input-wrapper">
+              <span class="input-icon"><i class="fa-solid fa-seedling"></i></span>
+              <input type="text" id="hist-seed" placeholder="Ej: 123456789">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="hist-placements">Clasificación Completa (Nombre, Kills - Un jugador por línea)</label>
+          <div class="input-wrapper" style="align-items: flex-start;">
+            <textarea id="hist-placements" rows="5" style="width: 100%; min-height: 100px; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-light); color: #fff; padding: 0.75rem; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.85rem; outline: none; resize: vertical;" placeholder="jos5_yt, 5&#10;player2, 2&#10;player3, 0"></textarea>
+          </div>
+          <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block; line-height: 1.3;">
+            Ingresa a los jugadores en orden de posición. La línea 1 será el Top 1 (Ganador), la línea 2 será el Top 2, etc. Formato: <code>Nombre, Kills</code>
+          </small>
+        </div>
+
+        <div class="modal-buttons" style="margin-top: 1.5rem; justify-content: flex-end;">
+          <button type="button" id="btn-history-modal-cancel" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" id="btn-history-modal-save" class="btn btn-success" style="background: var(--color-success); border: none; color: #fff; padding: 10px 20px; font-weight: 600; border-radius: var(--radius-sm); cursor: pointer;"><i class="fa-solid fa-floppy-disk"></i> Guardar Registro</button>
+        </div>
+      </form>
     </div>
   </div>
 

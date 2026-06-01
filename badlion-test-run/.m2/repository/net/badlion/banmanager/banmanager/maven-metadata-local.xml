@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>net.badlion.banmanager</groupId>
+  <artifactId>banmanager</artifactId>
+  <versioning>
+    <versions>
+      <version>1.0-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20260523073229</lastUpdated>
+  </versioning>
+</metadata>

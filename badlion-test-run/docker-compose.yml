@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  badlion-db:
+    image: postgres:13-alpine
+    container_name: badlion-db
+    environment:
+      POSTGRES_DB: badlion
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_pass
+    volumes:
+      - ./init-sql:/docker-entrypoint-initdb.d
+    networks:
+      badlion_net:
+        ipv4_address: 10.0.0.1
+    ports:
+      - "5434:5432"
+    restart: unless-stopped
+
+  badlion-slow-db:
+    image: postgres:13-alpine
+    container_name: badlion-slow-db
+    environment:
+      POSTGRES_DB: badlion_slow
+      POSTGRES_USER: badlion_slow
+      POSTGRES_PASSWORD: 9g4BnhNPti8iSr1u
+    networks:
+      badlion_net:
+        ipv4_address: 10.0.0.2
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+
+  badlion-couchdb:
+    image: couchdb:3.2
+    container_name: badlion-couchdb
+    environment:
+      COUCHDB_USER: admin
+      COUCHDB_PASSWORD: admin_pass
+    networks:
+      badlion_net:
+        ipv4_address: 10.0.0.3
+    ports:
+      - "5984:5984"
+    restart: unless-stopped
+
+  badlion-mc:
+    image: eclipse-temurin:8-jre-alpine
+    container_name: badlion-mc
+    working_dir: /data
+    command: java -Xmx2G -jar spigot-server.jar nogui
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./mc-data:/data
+    networks:
+      badlion_net:
+        ipv4_address: 10.0.0.5
+    ports:
+      - "25565:25565"
+    depends_on:
+      - badlion-db
+      - badlion-slow-db
+      - badlion-couchdb
+    restart: unless-stopped
+
+networks:
+  badlion_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+          gateway: 10.0.0.254

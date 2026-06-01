@@ -40,8 +40,11 @@ let uhcState = {
     fireless: false,
     noClean: false,
     doubleHealth: false,
-    timeBomb: false
+    timeBomb: false,
+    vanillaPlus: false,
+    enchant17: false
   },
+  shouldPregen: false,
   zone1Border: 1000,
   zone1Time: 10, // minutes of shrink
   zone2Border: 500,
@@ -103,7 +106,8 @@ function saveUhcConfig() {
       zone2Border: uhcState.zone2Border,
       zone2Time: uhcState.zone2Time,
       zone3Border: uhcState.zone3Border,
-      zone3Time: uhcState.zone3Time
+      zone3Time: uhcState.zone3Time,
+      shouldPregen: uhcState.shouldPregen
     };
     fs.writeFileSync(UHC_CONFIG_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
   } catch (e) {
@@ -150,7 +154,7 @@ async function executeRconCommand(command) {
       while (cleanCommand.startsWith('/')) {
         cleanCommand = cleanCommand.substring(1);
       }
-      await rconClient.send(cleanCommand);
+      return await rconClient.send(cleanCommand);
     }
   } catch (err) {
     console.error(`[RCON Command Fail] /${command}:`, err.message);
@@ -164,19 +168,52 @@ function calculateSpreadParams(borderSize) {
   return { spreadDistance, maxRange };
 }
 
+async function executeRconFillChunked(x1, y1, z1, x2, y2, z2, blockType) {
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  const minZ = Math.min(z1, z2);
+  const maxZ = Math.max(z1, z2);
+
+  const dx = maxX - minX;
+  const dy = maxY - minY;
+  const dz = maxZ - minZ;
+  const volume = (dx + 1) * (dy + 1) * (dz + 1);
+
+  if (volume <= 25000) {
+    await executeRconCommand(`fill ${minX} ${minY} ${minZ} ${maxX} ${maxY} ${maxZ} ${blockType}`);
+  } else {
+    // Split along the longest axis
+    if (dx >= dy && dx >= dz) {
+      const midX = Math.floor((minX + maxX) / 2);
+      await executeRconFillChunked(minX, minY, minZ, midX, maxY, maxZ, blockType);
+      await executeRconFillChunked(midX + 1, minY, minZ, maxX, maxY, maxZ, blockType);
+    } else if (dy >= dx && dy >= dz) {
+      const midY = Math.floor((minY + maxY) / 2);
+      await executeRconFillChunked(minX, minY, minZ, maxX, midY, maxZ, blockType);
+      await executeRconFillChunked(minX, midY + 1, minZ, maxX, maxY, maxZ, blockType);
+    } else {
+      const midZ = Math.floor((minZ + maxZ) / 2);
+      await executeRconFillChunked(minX, minY, minZ, maxX, maxY, midZ, blockType);
+      await executeRconFillChunked(minX, minY, midZ + 1, maxX, maxY, maxZ, blockType);
+    }
+  }
+}
+
 async function generateBedrockBorder(borderSize) {
   const half = Math.floor(borderSize / 2);
   const minVal = -half;
   const maxVal = half;
-  const minY = 50;
-  const maxY = 120;
+  const minY = 55;
+  const maxY = 90;
   
-  console.log(`[Border Engine] Generating physical Bedrock border at size ${borderSize}...`);
+  console.log(`[Border Engine] Generating physical Bedrock border at size ${borderSize} (Y=${minY}..${maxY})...`);
   try {
-    await executeRconCommand(`fill ${minVal} ${minY} ${minVal} ${minVal} ${maxY} ${maxVal} bedrock`);
-    await executeRconCommand(`fill ${maxVal} ${minY} ${minVal} ${maxVal} ${maxY} ${maxVal} bedrock`);
-    await executeRconCommand(`fill ${minVal} ${minY} ${minVal} ${maxVal} ${maxY} ${minVal} bedrock`);
-    await executeRconCommand(`fill ${minVal} ${minY} ${maxVal} ${maxVal} ${maxY} ${maxVal} bedrock`);
+    await executeRconFillChunked(minVal, minY, minVal, minVal, maxY, maxVal, 'bedrock');
+    await executeRconFillChunked(maxVal, minY, minVal, maxVal, maxY, maxVal, 'bedrock');
+    await executeRconFillChunked(minVal, minY, minVal, maxVal, maxY, minVal, 'bedrock');
+    await executeRconFillChunked(minVal, minY, maxVal, maxVal, maxY, maxVal, 'bedrock');
   } catch (err) {
     console.error('[Border Engine] Failed to generate Bedrock border blocks:', err.message);
   }
@@ -224,13 +261,13 @@ function getPlayerStats(username) {
 }
 
 async function generateLobbyStructure() {
-  console.log('[Lobby Engine] Lobby disabled by user request. Setting players to Creative mode.');
+  console.log('[Lobby Engine] Generating lobby structure and teleporting players...');
   try {
     if (!uhcState.active) {
-      await executeRconCommand('gamemode creative @a');
+      await executeRconCommand('uhcscenario lobby');
     }
   } catch (err) {
-    console.error('[Lobby Engine] Error setting creative mode:', err.message);
+    console.error('[Lobby Engine] Error generating lobby structure:', err.message);
   }
 }
 
@@ -258,20 +295,74 @@ function saveTournamentToHistory(winnerName = null, winnerKills = 0) {
       return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
-    const placementsList = (uhcState.participants || []).map(p => {
-      const initial = uhcState.initialStats[p.toLowerCase()] || { deaths: 0, kills: 0 };
-      const current = getPlayerStats(p);
-      const kills = Math.max(0, current.kills - initial.kills);
-      const rank = uhcState.placements[p.toLowerCase()] || 1;
-      return {
-        name: p,
-        kills: kills,
-        rank: rank,
-        status: rank === 1 ? 'Ganador' : `Top ${rank}`
-      };
+    const getPlayerActualKills = (playerName) => {
+      const initial = uhcState.initialStats[playerName.toLowerCase()] || { deaths: 0, kills: 0 };
+      const current = getPlayerStats(playerName);
+      return Math.max(0, current.kills - initial.kills);
+    };
+
+    const survivors = [];
+    const eliminated = [];
+    const winnerClean = winnerName ? winnerName.toLowerCase() : null;
+
+    for (const p of (uhcState.participants || [])) {
+      const pLower = p.toLowerCase();
+      const isWinner = winnerClean && pLower === winnerClean;
+      const isAlive = (uhcState.aliveParticipants || []).some(alive => alive.toLowerCase() === pLower);
+      
+      if (isWinner || isAlive) {
+        survivors.push(p);
+      } else {
+        eliminated.push(p);
+      }
+    }
+
+    // Sort survivors by kills descending (unless winner, who is always top 1)
+    survivors.sort((a, b) => {
+      if (winnerClean && a.toLowerCase() === winnerClean) return -1;
+      if (winnerClean && b.toLowerCase() === winnerClean) return 1;
+      return getPlayerActualKills(b) - getPlayerActualKills(a);
     });
 
-    placementsList.sort((a, b) => a.rank - b.rank);
+    // Sort eliminated by placements rank ascending (died later is smaller placement rank),
+    // tie-broken by kills descending, then name localeCompare.
+    eliminated.sort((a, b) => {
+      const rankA = uhcState.placements[a.toLowerCase()] !== undefined ? uhcState.placements[a.toLowerCase()] : 9999;
+      const rankB = uhcState.placements[b.toLowerCase()] !== undefined ? uhcState.placements[b.toLowerCase()] : 9999;
+      
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      const killsA = getPlayerActualKills(a);
+      const killsB = getPlayerActualKills(b);
+      if (killsB !== killsA) {
+        return killsB - killsA;
+      }
+      return a.localeCompare(b);
+    });
+
+    const placementsList = [];
+    let currentRank = 1;
+
+    for (const p of survivors) {
+      placementsList.push({
+        name: p,
+        kills: getPlayerActualKills(p),
+        rank: currentRank,
+        status: currentRank === 1 ? 'Ganador' : `Top ${currentRank}`
+      });
+      currentRank++;
+    }
+
+    for (const p of eliminated) {
+      placementsList.push({
+        name: p,
+        kills: getPlayerActualKills(p),
+        rank: currentRank,
+        status: `Top ${currentRank}`
+      });
+      currentRank++;
+    }
 
     const record = {
       winner: winnerName || 'Ninguno (Empate)',
@@ -292,7 +383,7 @@ function saveTournamentToHistory(winnerName = null, winnerKills = 0) {
   }
 }
 
-async function startUhcGame() {
+async function startUhcGame(lobbyId) {
   console.log('[UHC Engine] Starting UHC tournament...');
   
   // Guarantee jos5_yt is OP at start of match
@@ -336,20 +427,46 @@ async function startUhcGame() {
 
   // Populate participants, aliveParticipants, placements, initialStats
   let onlinePlayers = [];
-  try {
-    const listRes = await rconClient.send('list');
-    const listRegex = /There are \d+(?:\/\d+)? players online:(.*)/i;
-    const match = listRes.match(listRegex);
-    if (match && match[1]) {
-      onlinePlayers = match[1].split(',').map(name => name.trim()).filter(Boolean);
-    } else {
-      const simpleMatch = /online:\s*(.*)/i.exec(listRes);
-      if (simpleMatch && simpleMatch[1]) {
-        onlinePlayers = simpleMatch[1].split(',').map(name => name.trim()).filter(Boolean);
+  if (lobbyId === 1 || lobbyId === 2) {
+    try {
+      console.log(`[UHC Engine] Starting UHC selectively for Lobby ${lobbyId}...`);
+      const rconRes = await executeRconCommand(`uhcscenario lobbyplayers ${lobbyId}`);
+      console.log(`[UHC Engine] Lobby players RCON response: ${rconRes}`);
+      if (rconRes) {
+        const cleanRes = rconRes.trim();
+        try {
+          onlinePlayers = JSON.parse(cleanRes);
+        } catch (jsonErr) {
+          const arrayMatch = cleanRes.match(/\[.*\]/);
+          if (arrayMatch) {
+            onlinePlayers = JSON.parse(arrayMatch[0]);
+          }
+        }
       }
+      console.log(`[UHC Engine] Found players in Lobby ${lobbyId}:`, onlinePlayers);
+    } catch (err) {
+      console.error(`[UHC Engine] Failed to get players for Lobby ${lobbyId}:`, err.message);
     }
-  } catch (err) {
-    console.error('[UHC Engine] Failed to get online players for UHC start:', err.message);
+  } else {
+    try {
+      const listRes = await rconClient.send('list');
+      const listRegex = /There are \d+(?:\/\d+)? players online:(.*)/i;
+      const match = listRes.match(listRegex);
+      if (match && match[1]) {
+        onlinePlayers = match[1].split(',').map(name => name.trim()).filter(Boolean);
+      } else {
+        const simpleMatch = /online:\s*(.*)/i.exec(listRes);
+        if (simpleMatch && simpleMatch[1]) {
+          onlinePlayers = simpleMatch[1].split(',').map(name => name.trim()).filter(Boolean);
+        }
+      }
+    } catch (err) {
+      console.error('[UHC Engine] Failed to get online players for UHC start:', err.message);
+    }
+  }
+
+  if (onlinePlayers.length === 0) {
+    throw new Error('No hay jugadores elegibles para iniciar el UHC.');
   }
 
   uhcState.participants = [...onlinePlayers];
@@ -359,6 +476,12 @@ async function startUhcGame() {
 
   for (const player of onlinePlayers) {
     uhcState.initialStats[player.toLowerCase()] = getPlayerStats(player);
+  }
+
+  // Push participants to Spigot plugin
+  await executeRconCommand('uhcscenario participants clear');
+  for (const player of onlinePlayers) {
+    await executeRconCommand(`uhcscenario participants add ${player}`);
   }
 
   // Establish initial physical Bedrock walls and seal physics
@@ -381,15 +504,18 @@ async function startUhcGame() {
   await executeRconCommand('difficulty hard');
   await executeRconCommand('time set 0');
   await executeRconCommand('weather clear');
-  await executeRconCommand('clear @a');
-  await executeRconCommand('effect @a clear');
 
-  // Change players to survival mode and spread them!
-  await executeRconCommand('gamemode survival @a');
+  // Clear inventory & effects, and set survival only for actual participants!
+  for (const player of onlinePlayers) {
+    await executeRconCommand(`clear ${player}`);
+    await executeRconCommand(`effect ${player} clear`);
+    await executeRconCommand(`gamemode survival ${player}`);
+  }
   
   // Dynamically calculate range and distance safety bounds to prevent Minecraft errors
   const { spreadDistance, maxRange } = calculateSpreadParams(finalStartBorder);
-  await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false @a`);
+  const targetString = onlinePlayers.join(' ');
+  await executeRconCommand(`spreadplayers 0 0 ${spreadDistance} ${maxRange} false ${targetString}`);
 
   // Scenarios setup
   if (uhcState.scenarios.fireless) {
@@ -399,8 +525,10 @@ async function startUhcGame() {
   }
 
   if (uhcState.scenarios.doubleHealth) {
-    await executeRconCommand('effect @a minecraft:health_boost 99999 4');
-    await executeRconCommand('effect @a minecraft:instant_health 5');
+    for (const player of onlinePlayers) {
+      await executeRconCommand(`effect ${player} minecraft:health_boost 99999 4`);
+      await executeRconCommand(`effect ${player} minecraft:instant_health 5`);
+    }
   }
 
   // Activate scenarios in Java Spigot plugin
@@ -408,10 +536,14 @@ async function startUhcGame() {
   await executeRconCommand('uhcscenario cutclean ' + !!uhcState.scenarios.cutClean);
   await executeRconCommand('uhcscenario noclean ' + !!uhcState.scenarios.noClean);
   await executeRconCommand('uhcscenario timebomb ' + !!uhcState.scenarios.timeBomb);
+  await executeRconCommand('uhcscenario vanillaplus ' + !!uhcState.scenarios.vanillaPlus);
+  await executeRconCommand('uhcscenario enchant17 ' + !!uhcState.scenarios.enchant17);
 
-  // Grace items & effects
-  await executeRconCommand('effect @a minecraft:resistance 15 255');
-  await executeRconCommand('effect @a minecraft:saturation 15 255');
+  // Grace items & effects only for actual participants!
+  for (const player of onlinePlayers) {
+    await executeRconCommand(`effect ${player} minecraft:resistance 15 255`);
+    await executeRconCommand(`effect ${player} minecraft:saturation 15 255`);
+  }
 
   // Titles
   await executeRconCommand('title @a title {"text":"UHC INICIADO","color":"gold"}');
@@ -683,6 +815,13 @@ class ReconnectingRcon {
           await generateLobbyStructure();
           console.log('[OP Engine] Executing auto-OP command for jos5_yt...');
           await executeRconCommand('op jos5_yt');
+          
+          if (uhcState.shouldPregen) {
+            console.log(`[RCON Startup Hook] 'shouldPregen' is active. Starting chunk pregeneration for size ${uhcState.startBorderSize}...`);
+            await executeRconCommand(`uhcscenario pregen ${uhcState.startBorderSize}`);
+            uhcState.shouldPregen = false;
+            saveUhcConfig();
+          }
         } catch (e) {
           console.error('[RCON Startup Hook] Error running initial commands:', e.message);
         }
@@ -1050,6 +1189,70 @@ app.get('/api/uhc/history', (req, res) => {
   }
 });
 
+// POST /api/uhc/history
+app.post('/api/uhc/history', (req, res) => {
+  try {
+    const historyFile = UHC_HISTORY_FILE;
+    let history = [];
+    if (fs.existsSync(historyFile)) {
+      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    }
+    const newRecord = req.body;
+    if (!newRecord.winner || !newRecord.eventName) {
+      return res.status(400).json({ error: 'Faltan campos requeridos (winner, eventName).' });
+    }
+    if (!newRecord.date) newRecord.date = new Date().toISOString();
+    if (!newRecord.placements) newRecord.placements = [];
+    
+    history.unshift(newRecord);
+    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2), 'utf8');
+    res.json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/uhc/history/:index
+app.put('/api/uhc/history/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index, 10);
+    const historyFile = UHC_HISTORY_FILE;
+    let history = [];
+    if (fs.existsSync(historyFile)) {
+      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    }
+    if (isNaN(index) || index < 0 || index >= history.length) {
+      return res.status(400).json({ error: 'Índice de registro inválido.' });
+    }
+    const updatedRecord = req.body;
+    history[index] = { ...history[index], ...updatedRecord };
+    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2), 'utf8');
+    res.json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/uhc/history/:index
+app.delete('/api/uhc/history/:index', (req, res) => {
+  try {
+    const index = parseInt(req.params.index, 10);
+    const historyFile = UHC_HISTORY_FILE;
+    let history = [];
+    if (fs.existsSync(historyFile)) {
+      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    }
+    if (isNaN(index) || index < 0 || index >= history.length) {
+      return res.status(400).json({ error: 'Índice de registro inválido.' });
+    }
+    history.splice(index, 1);
+    fs.writeFileSync(historyFile, JSON.stringify(history, null, 2), 'utf8');
+    res.json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 6. POST /api/uhc/config
 app.post('/api/uhc/config', (req, res) => {
   try {
@@ -1119,7 +1322,8 @@ app.post('/api/uhc/start', async (req, res) => {
       return res.status(503).json({ error: 'Consola RCON no conectada. No se puede iniciar el UHC.' });
     }
 
-    await startUhcGame();
+    const lobbyId = req.body.lobbyId ? parseInt(req.body.lobbyId, 10) : undefined;
+    await startUhcGame(lobbyId);
     res.json({ success: true, message: '¡Torneo UHC iniciado exitosamente!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1159,6 +1363,8 @@ app.post('/api/uhc/stop', async (req, res) => {
     await executeRconCommand('uhcscenario cutclean false');
     await executeRconCommand('uhcscenario noclean false');
     await executeRconCommand('uhcscenario timebomb false');
+    await executeRconCommand('uhcscenario vanillaplus false');
+    await executeRconCommand('uhcscenario enchant17 false');
     
     // Clear custom scenarios
     if (uhcState.scenarios.doubleHealth) {
@@ -1204,7 +1410,9 @@ app.post('/api/world/regenerate', async (req, res) => {
       return res.status(503).json({ error: 'La consola RCON no está conectada. No se puede regenerar el mundo.' });
     }
     
-    const newSeed = (seed !== undefined) ? seed.toString().trim() : '';
+    const newSeed = (seed !== undefined && seed !== null && seed.toString().trim() !== '') 
+      ? seed.toString().trim() 
+      : Math.floor(1000000000 + Math.random() * 9000000000).toString();
     
     // Update server.properties
     const propPath = path.join(__dirname, 'mc-data', 'server.properties');
@@ -1219,6 +1427,7 @@ app.post('/api/world/regenerate', async (req, res) => {
     }
     
     uhcState.worldSeed = newSeed;
+    uhcState.shouldPregen = true;
     saveUhcConfig();
     
     console.log(`[World Regenerator] Seed updated to "${newSeed}". Stopping Minecraft server to release file handles...`);
@@ -1256,6 +1465,101 @@ app.post('/api/world/regenerate', async (req, res) => {
     }, 3000);
     
     res.json({ success: true, message: 'La regeneración del mundo se ha iniciado. El servidor se detendrá, se eliminarán los mundos y se regenerarán con la semilla especificada.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- PRACTICE ENDPOINTS ---
+
+// 11. GET /api/practice/status
+app.get('/api/practice/status', async (req, res) => {
+  try {
+    if (!rconClient.connected) {
+      return res.json({ 
+        success: false, 
+        active: false, 
+        message: 'RCON disconnected',
+        players: [],
+        kills: {},
+        deaths: {}
+      });
+    }
+    const rawStatus = await rconClient.send('uhcscenario practice status');
+    try {
+      const parsed = JSON.parse(rawStatus.trim());
+      return res.json({ success: true, ...parsed });
+    } catch (e) {
+      console.warn('[Practice status] Raw response could not be parsed as JSON:', rawStatus);
+      return res.json({ 
+        success: false, 
+        active: false, 
+        rawResponse: rawStatus,
+        players: [],
+        kills: {},
+        deaths: {}
+      });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 12. POST /api/practice/toggle
+app.post('/api/practice/toggle', async (req, res) => {
+  try {
+    const { active } = req.body;
+    if (!rconClient.connected) {
+      return res.status(503).json({ error: 'La consola RCON no está conectada.' });
+    }
+    const cmd = active ? 'uhcscenario practice true' : 'uhcscenario practice false';
+    const response = await rconClient.send(cmd);
+    res.json({ success: true, response });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 13. POST /api/practice/join
+app.post('/api/practice/join', async (req, res) => {
+  try {
+    const { player } = req.body;
+    if (!player) return res.status(400).json({ error: 'Nombre de jugador no especificado.' });
+    if (!rconClient.connected) {
+      return res.status(503).json({ error: 'La consola RCON no está conectada.' });
+    }
+    const response = await rconClient.send(`uhcscenario practice join ${player}`);
+    res.json({ success: true, response });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 14. POST /api/practice/leave
+app.post('/api/practice/leave', async (req, res) => {
+  try {
+    const { player } = req.body;
+    if (!player) return res.status(400).json({ error: 'Nombre de jugador no especificado.' });
+    if (!rconClient.connected) {
+      return res.status(503).json({ error: 'La consola RCON no está conectada.' });
+    }
+    const response = await rconClient.send(`uhcscenario practice leave ${player}`);
+    res.json({ success: true, response });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 15. POST /api/practice/duel
+app.post('/api/practice/duel', async (req, res) => {
+  try {
+    const { p1, p2 } = req.body;
+    if (!p1 || !p2) return res.status(400).json({ error: 'Falta uno o ambos combatientes.' });
+    if (!rconClient.connected) {
+      return res.status(503).json({ error: 'La consola RCON no está conectada.' });
+    }
+    const response = await rconClient.send(`uhcscenario practice duel ${p1} ${p2}`);
+    res.json({ success: true, response });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>net.badlion.smellymapvotes</groupId>
+  <artifactId>smellymapvotes</artifactId>
+  <versioning>
+    <versions>
+      <version>1.0-SNAPSHOT</version>
+    </versions>
+    <lastUpdated>20260523073415</lastUpdated>
+  </versioning>
+</metadata>

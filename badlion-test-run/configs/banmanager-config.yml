@@ -1,0 +1,12 @@
+banmanager:
+    connection:
+        url: 10.0.0.1
+        user: postgres
+        pass: postgres_pass
+        db: badlion
+        min: 1
+    connection2:
+        url: 10.0.0.1
+        user: postgres
+        pass: postgres_pass
+        db: badlion

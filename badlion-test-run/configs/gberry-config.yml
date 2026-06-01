@@ -1,0 +1,13 @@
+gberry:
+    spam_filter: true
+db:
+    min-connections: 2
+    max-connections: 5
+    partitions: 1
+couchdb:
+    url: 10.0.0.3
+    port: 5984
+    db: badlion
+server: "na_lobby_1"
+sync-url: "http://10.0.0.1:10111/"
+sync-key: 5mPkwHY9xxLUMVwmCCZK3whzjsWMjyBC

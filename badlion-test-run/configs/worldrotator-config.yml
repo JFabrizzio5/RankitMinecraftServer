@@ -1,0 +1,4 @@
+worldrotator:
+    delete_on_boot: true
+    path_to_worlds: rotator_worlds
+    worlds_to_load: []

@@ -1,1 +1,14 @@
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/tasks/ChunkPregenerator.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/manager/ScoreboardManager.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/PracticeListener.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/EnchantListener.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/BorderListener.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/CombatLogListener.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/CutCleanListener.java
 /usr/src/mymaven/src/main/java/com/antigravity/uhc/UhcPvpScenarios.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/NoCleanListener.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/generator/VoidGenerator.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/commands/ScenarioCommand.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/manager/LobbyManager.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/manager/PracticeManager.java
+/usr/src/mymaven/src/main/java/com/antigravity/uhc/listeners/LobbyListener.java
